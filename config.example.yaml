@@ -1,0 +1,26 @@
+# 跨设备语音输入传输系统 - 配置文件示例
+# 复制此文件为 config.yaml 并根据需要修改
+
+# 网络配置
+host: "0.0.0.0"
+port: 8080
+
+# 安全配置
+# IP 白名单（CIDR 格式），只有这些网段的设备可以发送文本
+allowed_ips:
+  - "192.168.0.0/16"
+  - "10.0.0.0/8"
+  - "172.16.0.0/12"
+
+# Token 鉴权（留空或删除则不启用）
+# token: "your-secret-token-here"
+# require_token: false
+
+# 行为配置
+auto_paste: true        # 默认是否自动粘贴（true=自动 Ctrl+V, false=仅复制）
+history_size: 50        # 历史记录保留条数
+max_content_length: 10240  # 请求体大小上限（字节）
+
+# 生产部署（仅 --production 模式下生效）
+workers: 4              # waitress 工作线程数
+log_level: "info"       # 日志级别: debug / info / warning / error

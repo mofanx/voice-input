@@ -1,0 +1,5 @@
+flask>=2.2
+pyclip>=0.7
+keyboard>=0.13
+pyyaml>=6.0
+waitress>=2.1

@@ -1,0 +1,570 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#f5f5f7">
+<title>语音输入</title>
+<style>
+  :root {
+    --bg: #f5f5f7;
+    --card: #ffffff;
+    --border: #e5e5ea;
+    --text: #1d1d1f;
+    --text2: #86868b;
+    --accent: #007aff;
+    --accent-active: #0056cc;
+    --success: #34c759;
+    --error: #ff3b30;
+    --warn: #ff9500;
+    --radius: 14px;
+    --shadow: 0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.06);
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-left: env(safe-area-inset-left, 0px);
+    --safe-right: env(safe-area-inset-right, 0px);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100%;
+    padding: calc(12px + var(--safe-top)) calc(12px + var(--safe-right)) calc(20px + var(--safe-bottom)) calc(12px + var(--safe-left));
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.5;
+  }
+  .container { max-width: 600px; margin: 0 auto; }
+
+  /* Header */
+  .header { text-align: center; padding: 16px 0 4px; }
+  .header h1 { font-size: 21px; font-weight: 700; letter-spacing: -0.3px; }
+  .header .server-info { font-size: 12px; color: var(--text2); margin-top: 2px; }
+
+  /* Card */
+  .card {
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 14px;
+    margin: 10px 0;
+  }
+
+  /* Textarea */
+  .input-area { position: relative; }
+  .input-area textarea {
+    width: 100%;
+    min-height: 120px;
+    font-size: 16px;
+    line-height: 1.5;
+    padding: 12px;
+    border: 2px solid var(--border);
+    border-radius: 12px;
+    background: var(--bg);
+    color: var(--text);
+    resize: vertical;
+    outline: none;
+    transition: border-color .2s;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+  .input-area textarea:focus { border-color: var(--accent); }
+  .input-area .char-count {
+    position: absolute; right: 10px; bottom: 8px;
+    font-size: 11px; color: var(--text2); pointer-events: none;
+  }
+
+  /* Token */
+  .token-row input {
+    width: 100%; font-size: 15px; padding: 11px 12px;
+    border: 2px solid var(--border); border-radius: 12px; background: var(--bg);
+    outline: none; transition: border-color .2s;
+    -webkit-appearance: none; appearance: none;
+  }
+  .token-row input:focus { border-color: var(--accent); }
+  .token-row { margin-bottom: 10px; }
+
+  /* Mode selector */
+  .mode-group {
+    display: flex; background: var(--bg); border-radius: 10px;
+    padding: 3px; gap: 2px;
+  }
+  .mode-group label {
+    flex: 1; text-align: center; font-size: 13px; font-weight: 500;
+    padding: 8px 4px; border-radius: 8px; cursor: pointer;
+    transition: all .2s; color: var(--text2);
+    user-select: none; -webkit-user-select: none;
+  }
+  .mode-group input[type="radio"] { display: none; }
+  .mode-group input[type="radio"]:checked + label {
+    background: var(--card); color: var(--text);
+    box-shadow: 0 1px 3px rgba(0,0,0,.1);
+  }
+  .mode-title { font-size: 13px; font-weight: 600; color: var(--text2); margin-bottom: 8px; }
+
+  /* Toggle switch */
+  .toggle-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 4px 0; margin-top: 10px; gap: 12px;
+  }
+  .toggle-row .toggle-label { flex: 1; min-width: 0; }
+  .toggle-row .toggle-label span { font-size: 14px; font-weight: 500; display: block; }
+  .toggle-row .hint { font-size: 11px; color: var(--text2); font-weight: 400; line-height: 1.3; }
+  .switch { position: relative; width: 51px; height: 31px; flex-shrink: 0; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .switch .slider {
+    position: absolute; inset: 0; background: #e9e9eb;
+    border-radius: 16px; transition: background .3s; cursor: pointer;
+  }
+  .switch .slider::before {
+    content: ''; position: absolute; width: 27px; height: 27px;
+    left: 2px; top: 2px; background: #fff; border-radius: 50%;
+    box-shadow: 0 1px 3px rgba(0,0,0,.2); transition: transform .3s;
+  }
+  .switch input:checked + .slider { background: var(--success); }
+  .switch input:checked + .slider::before { transform: translateX(20px); }
+
+  /* Delay slider */
+  .delay-row {
+    display: none; align-items: center; gap: 10px;
+    margin-top: 8px; padding: 8px 0 0;
+  }
+  .delay-row.show { display: flex; }
+  .delay-row label { font-size: 12px; color: var(--text2); white-space: nowrap; }
+  .delay-row input[type="range"] {
+    flex: 1; height: 4px; -webkit-appearance: none; appearance: none;
+    background: var(--border); border-radius: 2px; outline: none;
+  }
+  .delay-row input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 22px; height: 22px; border-radius: 50%;
+    background: var(--accent); cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0,0,0,.2);
+  }
+  .delay-row .delay-val { font-size: 13px; font-weight: 600; min-width: 32px; text-align: right; }
+
+  /* Send button */
+  .send-btn {
+    width: 100%; padding: 14px; font-size: 17px; font-weight: 600;
+    border: none; border-radius: 12px; background: var(--accent); color: #fff;
+    cursor: pointer; transition: background .2s, transform .1s;
+    -webkit-appearance: none; appearance: none; margin-top: 10px;
+  }
+  .send-btn:active { background: var(--accent-active); transform: scale(0.98); }
+  .send-btn:disabled { opacity: 0.5; }
+
+  /* Toast */
+  .toast {
+    position: fixed; top: calc(12px + var(--safe-top)); left: 50%;
+    transform: translateX(-50%) translateY(-80px);
+    padding: 10px 18px; border-radius: 12px; font-size: 14px; font-weight: 500;
+    color: #fff; z-index: 9999;
+    transition: transform .35s cubic-bezier(.4,0,.2,1), opacity .35s;
+    opacity: 0; pointer-events: none; max-width: 90vw; text-align: center;
+    box-shadow: 0 4px 12px rgba(0,0,0,.15);
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+  .toast.ok { background: var(--success); }
+  .toast.err { background: var(--error); }
+
+  /* Section title */
+  .section-hdr {
+    display: flex; align-items: center; justify-content: space-between;
+    user-select: none; -webkit-user-select: none;
+  }
+  .section-hdr h3 { font-size: 14px; font-weight: 600; }
+
+  /* History */
+  .hist-toolbar {
+    display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 6px;
+  }
+  .hist-toolbar input[type="text"],
+  .hist-toolbar input[type="date"] {
+    flex: 1; min-width: 0; font-size: 13px; padding: 7px 10px;
+    border: 1px solid var(--border); border-radius: 8px; background: var(--bg);
+    outline: none; -webkit-appearance: none; appearance: none;
+  }
+  .hist-toolbar input:focus { border-color: var(--accent); }
+  .hist-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+  .hist-actions button {
+    font-size: 12px; padding: 5px 10px; border: 1px solid var(--border);
+    border-radius: 8px; background: var(--card); color: var(--text);
+    cursor: pointer; white-space: nowrap;
+  }
+  .hist-actions button:active { background: var(--bg); }
+  .hist-actions .danger { color: var(--error); border-color: var(--error); }
+
+  .history-list { max-height: 300px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  .history-item {
+    display: flex; align-items: flex-start; gap: 8px;
+    padding: 8px 0; border-bottom: 1px solid var(--border);
+    font-size: 13px; line-height: 1.4;
+  }
+  .history-item:last-child { border-bottom: none; }
+  .history-item .hi-body { flex: 1; min-width: 0; word-break: break-all; }
+  .history-item .hi-time { font-size: 11px; color: var(--text2); }
+  .history-item .hi-del {
+    flex-shrink: 0; width: 28px; height: 28px; border: none;
+    background: none; color: var(--text2); font-size: 16px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 6px;
+  }
+  .history-item .hi-del:active { background: var(--bg); color: var(--error); }
+  .history-empty { text-align: center; color: var(--text2); font-size: 13px; padding: 16px 0; }
+
+  /* Responsive: small phones */
+  @media (max-width: 374px) {
+    body { padding: calc(8px + var(--safe-top)) calc(8px + var(--safe-right)) calc(16px + var(--safe-bottom)) calc(8px + var(--safe-left)); }
+    .card { padding: 12px; margin: 8px 0; }
+    .header h1 { font-size: 19px; }
+    .input-area textarea { min-height: 100px; font-size: 15px; padding: 10px; }
+    .send-btn { padding: 12px; font-size: 16px; }
+    .mode-group label { font-size: 12px; padding: 7px 3px; }
+  }
+
+  /* Responsive: tablets and wider */
+  @media (min-width: 768px) {
+    .container { max-width: 560px; }
+    .card { padding: 18px; margin: 12px 0; }
+    .input-area textarea { min-height: 160px; font-size: 17px; }
+  }
+
+  /* Landscape on phones */
+  @media (max-height: 500px) and (orientation: landscape) {
+    .header { padding: 8px 0 2px; }
+    .header h1 { font-size: 18px; }
+    .card { padding: 10px; margin: 6px 0; }
+    .input-area textarea { min-height: 80px; }
+    .send-btn { padding: 10px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<div class="header">
+  <h1>语音输入</h1>
+  <div class="server-info">{{ server_ip }}:{{ port }}</div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+{% if require_token %}
+<div class="card token-row">
+  <input id="token" type="password" placeholder="输入 Token" autocomplete="off">
+</div>
+{% endif %}
+
+<!-- Input -->
+<div class="card">
+  <div class="input-area">
+    <textarea id="text" placeholder="点击此处，使用语音输入法输入文字，然后点击发送..." autocomplete="off" autocorrect="off" spellcheck="false"></textarea>
+    <div class="char-count" id="charCount">0</div>
+  </div>
+  <button class="send-btn" id="send">发送到电脑</button>
+</div>
+
+<!-- Settings -->
+<div class="card">
+  <div class="mode-title">发送模式</div>
+  <div class="mode-group">
+    <input type="radio" name="mode" id="mode_copy" value="copy">
+    <label for="mode_copy">仅复制</label>
+    <input type="radio" name="mode" id="mode_paste" value="paste" {{ 'checked' if auto_paste else '' }}>
+    <label for="mode_paste">自动粘贴</label>
+    <input type="radio" name="mode" id="mode_terminal" value="paste_terminal">
+    <label for="mode_terminal">终端粘贴</label>
+  </div>
+  {% if not auto_paste %}
+  <script>document.getElementById('mode_copy').checked = true;</script>
+  {% endif %}
+
+  <div class="toggle-row">
+    <div class="toggle-label">
+      <span>自动发送</span>
+      <span class="hint" id="autoSendHint">输入停顿后自动发送</span>
+    </div>
+    <label class="switch">
+      <input type="checkbox" id="autoSend">
+      <span class="slider"></span>
+    </label>
+  </div>
+  <div class="delay-row" id="delayRow">
+    <label>延迟</label>
+    <input type="range" id="delaySlider" min="0.5" max="5" step="0.5" value="1.5">
+    <span class="delay-val" id="delayVal">1.5s</span>
+  </div>
+
+  <div class="toggle-row">
+    <div class="toggle-label">
+      <span>发送后清空</span>
+      <span class="hint">发送成功后自动清空输入框</span>
+    </div>
+    <label class="switch">
+      <input type="checkbox" id="autoClear" checked>
+      <span class="slider"></span>
+    </label>
+  </div>
+
+  <div class="toggle-row">
+    <div class="toggle-label">
+      <span>恢复剪贴板</span>
+      <span class="hint">粘贴后恢复电脑原有剪贴板内容（仅复制模式下无效）</span>
+    </div>
+    <label class="switch">
+      <input type="checkbox" id="restoreClip" checked>
+      <span class="slider"></span>
+    </label>
+  </div>
+</div>
+
+<!-- History -->
+<div class="card">
+  <div class="section-hdr">
+    <h3>发送历史</h3>
+    <label class="switch">
+      <input type="checkbox" id="historyEnabled">
+      <span class="slider"></span>
+    </label>
+  </div>
+  <div id="historyPanel" style="display:none; margin-top:10px;">
+    <div class="hist-toolbar">
+      <input type="text" id="histSearch" placeholder="搜索...">
+      <input type="date" id="histDate">
+    </div>
+    <div class="hist-actions">
+      <button id="histExportJson">导出 JSON</button>
+      <button id="histExportCsv">导出 CSV</button>
+      <button id="histClear" class="danger">清空全部</button>
+    </div>
+    <div class="history-list" id="historyList">
+      <div class="history-empty">暂无记录</div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /container -->
+
+<script>
+(function() {
+  const $ = id => document.getElementById(id);
+  const LS = key => localStorage.getItem('vi_' + key);
+  const LS_SET = (key, val) => localStorage.setItem('vi_' + key, val);
+
+  // ===== Toast =====
+  let toastTimer = null;
+  function toast(msg, ok) {
+    const el = $('toast');
+    el.textContent = msg;
+    el.className = 'toast ' + (ok ? 'ok' : 'err') + ' show';
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove('show'), 2500);
+  }
+
+  // ===== Token =====
+  const tokenEl = $('token');
+  if (tokenEl) {
+    tokenEl.value = LS('token') || '';
+    tokenEl.addEventListener('input', () => LS_SET('token', tokenEl.value));
+  }
+
+  // ===== Restore settings =====
+  const savedMode = LS('mode');
+  if (savedMode) {
+    const r = document.querySelector('input[name="mode"][value="' + savedMode + '"]');
+    if (r) r.checked = true;
+  }
+  document.querySelectorAll('input[name="mode"]').forEach(r => {
+    r.addEventListener('change', () => LS_SET('mode', r.value));
+  });
+
+  const autoSendEl = $('autoSend');
+  const autoClearEl = $('autoClear');
+  const restoreClipEl = $('restoreClip');
+  const delaySlider = $('delaySlider');
+  const delayVal = $('delayVal');
+  const delayRow = $('delayRow');
+  const histEnabledEl = $('historyEnabled');
+
+  function restoreToggle(el, key, def) {
+    const v = LS(key);
+    el.checked = v !== null ? v === '1' : def;
+  }
+  restoreToggle(autoSendEl, 'autoSend', false);
+  restoreToggle(autoClearEl, 'autoClear', true);
+  restoreToggle(restoreClipEl, 'restoreClip', true);
+  restoreToggle(histEnabledEl, 'historyEnabled', false);
+
+  autoSendEl.addEventListener('change', () => { LS_SET('autoSend', autoSendEl.checked ? '1' : '0'); updateDelayRow(); });
+  autoClearEl.addEventListener('change', () => LS_SET('autoClear', autoClearEl.checked ? '1' : '0'));
+  restoreClipEl.addEventListener('change', () => LS_SET('restoreClip', restoreClipEl.checked ? '1' : '0'));
+  histEnabledEl.addEventListener('change', () => {
+    LS_SET('historyEnabled', histEnabledEl.checked ? '1' : '0');
+    $('historyPanel').style.display = histEnabledEl.checked ? 'block' : 'none';
+    if (histEnabledEl.checked) loadHistory();
+  });
+  $('historyPanel').style.display = histEnabledEl.checked ? 'block' : 'none';
+
+  // ===== Delay slider =====
+  const savedDelay = LS('autoSendDelay');
+  if (savedDelay) delaySlider.value = savedDelay;
+  function getDelay() { return parseFloat(delaySlider.value) || 1.5; }
+  function updateDelayRow() {
+    delayRow.classList.toggle('show', autoSendEl.checked);
+    delayVal.textContent = getDelay() + 's';
+    $('autoSendHint').textContent = autoSendEl.checked
+      ? '输入停顿 ' + getDelay() + ' 秒后自动发送'
+      : '输入停顿后自动发送';
+  }
+  delaySlider.addEventListener('input', () => {
+    LS_SET('autoSendDelay', delaySlider.value);
+    updateDelayRow();
+  });
+  updateDelayRow();
+
+  // ===== Char count =====
+  const textEl = $('text');
+  const charCountEl = $('charCount');
+  textEl.addEventListener('input', () => { charCountEl.textContent = textEl.value.length; });
+
+  // ===== Auto-send debounce =====
+  let autoSendTimer = null;
+  textEl.addEventListener('input', () => {
+    clearTimeout(autoSendTimer);
+    if (autoSendEl.checked && textEl.value.trim()) {
+      autoSendTimer = setTimeout(() => doSend(), getDelay() * 1000);
+    }
+  });
+
+  // ===== Send =====
+  let sending = false;
+  async function doSend() {
+    if (sending) return;
+    const text = textEl.value || '';
+    if (!text.trim()) { toast('请先输入内容', false); return; }
+
+    const mode = document.querySelector('input[name="mode"]:checked');
+    const action = mode ? mode.value : 'paste';
+    const payload = { text, timestamp: Date.now(), device_id: 'phone_web', action,
+      restore_clipboard: (action !== 'copy' && restoreClipEl.checked) };
+    const headers = { 'Content-Type': 'application/json' };
+    if (tokenEl && tokenEl.value.trim()) headers['X-Auth-Token'] = tokenEl.value.trim();
+
+    sending = true;
+    $('send').disabled = true;
+    $('send').textContent = '发送中...';
+
+    try {
+      const res = await fetch('/input', { method: 'POST', headers, body: JSON.stringify(payload) });
+      const j = await res.json().catch(() => null);
+      if (res.ok) {
+        toast('已发送到电脑', true);
+        if (autoClearEl.checked) { textEl.value = ''; charCountEl.textContent = '0'; }
+        if (histEnabledEl.checked) loadHistory();
+      } else {
+        toast('失败: ' + (j && j.message ? j.message : res.status), false);
+      }
+    } catch (e) {
+      toast('网络错误: ' + e.message, false);
+    } finally {
+      sending = false;
+      $('send').disabled = false;
+      $('send').textContent = '发送到电脑';
+    }
+  }
+  $('send').addEventListener('click', doSend);
+
+  // ===== History =====
+  let allItems = [];
+
+  async function loadHistory() {
+    try {
+      const res = await fetch('/history');
+      const j = await res.json();
+      allItems = (j.items || []);
+      renderHistory();
+    } catch (e) { /* silent */ }
+  }
+
+  function renderHistory() {
+    const list = $('historyList');
+    let items = allItems;
+
+    // Search filter
+    const q = ($('histSearch').value || '').trim().toLowerCase();
+    if (q) items = items.filter(i => (i.text || '').toLowerCase().includes(q));
+
+    // Date filter
+    const d = $('histDate').value;
+    if (d) {
+      const dayStart = new Date(d).getTime();
+      const dayEnd = dayStart + 86400000;
+      items = items.filter(i => i.server_time >= dayStart && i.server_time < dayEnd);
+    }
+
+    if (items.length === 0) {
+      list.innerHTML = '<div class="history-empty">暂无记录</div>';
+      return;
+    }
+    list.innerHTML = items.map(item => {
+      const t = new Date(item.server_time).toLocaleString('zh-CN', {
+        month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit'
+      });
+      const preview = item.text.length > 100 ? item.text.slice(0, 100) + '...' : item.text;
+      return '<div class="history-item">' +
+        '<div class="hi-body"><span class="hi-time">' + t + '</span><br>' + escHtml(preview) + '</div>' +
+        '<button class="hi-del" data-id="' + item.id + '" title="删除">&#x2715;</button>' +
+        '</div>';
+    }).join('');
+  }
+
+  function escHtml(s) {
+    const d = document.createElement('div');
+    d.textContent = s;
+    return d.innerHTML;
+  }
+
+  $('histSearch').addEventListener('input', renderHistory);
+  $('histDate').addEventListener('change', renderHistory);
+
+  // Delete single item
+  $('historyList').addEventListener('click', async (e) => {
+    const btn = e.target.closest('.hi-del');
+    if (!btn) return;
+    const id = btn.getAttribute('data-id');
+    try {
+      await fetch('/history/' + id, { method: 'DELETE' });
+      allItems = allItems.filter(i => String(i.id) !== String(id));
+      renderHistory();
+    } catch (ex) { toast('删除失败', false); }
+  });
+
+  // Clear all
+  $('histClear').addEventListener('click', async () => {
+    if (!confirm('确定清空全部历史记录？')) return;
+    try {
+      await fetch('/history', { method: 'DELETE' });
+      allItems = [];
+      renderHistory();
+      toast('已清空', true);
+    } catch (ex) { toast('清空失败', false); }
+  });
+
+  // Export
+  $('histExportJson').addEventListener('click', () => {
+    window.open('/history/export?format=json', '_blank');
+  });
+  $('histExportCsv').addEventListener('click', () => {
+    window.open('/history/export?format=csv', '_blank');
+  });
+
+  // Auto-focus
+  setTimeout(() => textEl.focus(), 300);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,52 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+*.manifest
+*.spec
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Distribution / packaging
+*.whl
+*.tar.gz
+sdist/
+develop-eggs/
+.installed.cfg
+
+# Testing
+.tox/
+.nox/
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+
+# Config (user-specific, not the example)
+config.yaml
+config.yml
