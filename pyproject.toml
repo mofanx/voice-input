@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "voice-input"
-version = "1.0.0"
+version = "1.0.1"
 description = "跨设备语音输入传输系统 - 将手机端语音识别文本传送到电脑"
 readme = "README.md"
 license = {text = "MIT"}
@@ -29,13 +29,13 @@ classifiers = [
 dependencies = [
     "flask>=2.2",
     "pyclip>=0.7",
+    "keyboard>=0.13",
 ]
 
 [project.optional-dependencies]
-keyboard = ["keyboard>=0.13"]
 production = ["waitress>=2.1"]
 config = ["pyyaml>=6.0"]
-all = ["keyboard>=0.13", "waitress>=2.1", "pyyaml>=6.0"]
+all = ["waitress>=2.1", "pyyaml>=6.0"]
 
 [project.scripts]
 voice-input = "voice_input.cli:main"

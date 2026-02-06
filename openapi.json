@@ -1,0 +1,681 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "跨设备语音输入传输系统 API",
+    "description": "将手机端语音识别文本传送到电脑剪贴板，支持自动粘贴、历史记录管理、剪贴板恢复等功能。\n\n## 认证方式\n\n当服务端启用 Token 认证时，所有敏感接口需要携带 Token。支持三种方式传递：\n- **Header**: `X-Auth-Token: your-token`\n- **Query**: `?token=your-token`\n- **Body**: `{\"token\": \"your-token\"}` (仅 POST 请求)\n\n## IP 白名单\n\n服务端可配置 IP 白名单（CIDR 格式），未授权 IP 的请求将被拒绝。",
+    "version": "1.0.1",
+    "contact": {
+      "name": "mofanx",
+      "email": "yanwuning@live.cn",
+      "url": "https://github.com/mofanx/voice-input"
+    },
+    "license": {
+      "name": "MIT",
+      "url": "https://opensource.org/licenses/MIT"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://{host}:{port}",
+      "description": "本地服务",
+      "variables": {
+        "host": {
+          "default": "192.168.1.100",
+          "description": "服务器 IP 地址"
+        },
+        "port": {
+          "default": "8080",
+          "description": "服务端口"
+        }
+      }
+    }
+  ],
+  "tags": [
+    {
+      "name": "基础",
+      "description": "服务状态与页面（无需认证）"
+    },
+    {
+      "name": "输入",
+      "description": "文本发送到电脑（需要认证）"
+    },
+    {
+      "name": "历史记录",
+      "description": "发送历史的查询、删除、导出（需要认证）"
+    }
+  ],
+  "components": {
+    "securitySchemes": {
+      "TokenHeader": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Auth-Token",
+        "description": "通过 Header 传递 Token"
+      },
+      "TokenQuery": {
+        "type": "apiKey",
+        "in": "query",
+        "name": "token",
+        "description": "通过 Query 参数传递 Token"
+      }
+    },
+    "schemas": {
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "description": "HTTP 状态码"
+          },
+          "message": {
+            "type": "string",
+            "description": "错误信息"
+          },
+          "error_detail": {
+            "type": "string",
+            "description": "详细错误描述"
+          }
+        },
+        "required": ["code", "message"]
+      },
+      "InputRequest": {
+        "type": "object",
+        "required": ["text"],
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "要发送的文本内容",
+            "example": "你好，这是一段语音输入的文字"
+          },
+          "action": {
+            "type": "string",
+            "enum": ["copy", "paste", "paste_terminal", "type"],
+            "default": "paste",
+            "description": "操作模式：copy=仅复制到剪贴板，paste=复制并Ctrl+V粘贴，paste_terminal=复制并Ctrl+Shift+V终端粘贴，type=模拟逐字键入"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64",
+            "description": "客户端时间戳（毫秒），用于时间偏差检测",
+            "example": 1707206400000
+          },
+          "device_id": {
+            "type": "string",
+            "default": "unknown",
+            "description": "设备标识",
+            "example": "phone_web"
+          },
+          "restore_clipboard": {
+            "type": "boolean",
+            "default": false,
+            "description": "粘贴完成后是否恢复原有剪贴板内容（仅在 action 非 copy 时生效）"
+          },
+          "token": {
+            "type": "string",
+            "description": "认证 Token（也可通过 Header 或 Query 传递）"
+          }
+        }
+      },
+      "InputResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "example": 200
+          },
+          "message": {
+            "type": "string",
+            "example": "success"
+          },
+          "server_time": {
+            "type": "integer",
+            "format": "int64",
+            "description": "服务器处理时间戳（毫秒）",
+            "example": 1707206400123
+          },
+          "processed_text_length": {
+            "type": "integer",
+            "description": "处理的文本长度",
+            "example": 15
+          },
+          "action": {
+            "type": "string",
+            "description": "实际执行的操作模式",
+            "example": "paste"
+          },
+          "device_id": {
+            "type": "string",
+            "example": "phone_web"
+          },
+          "clipboard_restored": {
+            "type": "boolean",
+            "description": "是否已恢复原有剪贴板内容"
+          }
+        }
+      },
+      "StatusResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "example": 200
+          },
+          "message": {
+            "type": "string",
+            "example": "service running"
+          },
+          "version": {
+            "type": "string",
+            "example": "1.0.1"
+          },
+          "server_ip": {
+            "type": "string",
+            "description": "服务器局域网 IP",
+            "example": "192.168.1.100"
+          },
+          "port": {
+            "type": "integer",
+            "example": 8080
+          },
+          "platform": {
+            "type": "string",
+            "description": "服务器操作系统",
+            "enum": ["Linux", "Windows", "Darwin"],
+            "example": "Linux"
+          },
+          "require_token": {
+            "type": "boolean",
+            "description": "是否需要 Token 认证"
+          },
+          "auto_paste": {
+            "type": "boolean",
+            "description": "默认是否自动粘贴"
+          },
+          "history_size": {
+            "type": "integer",
+            "description": "历史记录最大保留条数",
+            "example": 50
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64",
+            "description": "服务器当前时间戳（毫秒）"
+          }
+        }
+      },
+      "HistoryItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "历史记录唯一 ID",
+            "example": 1
+          },
+          "server_time": {
+            "type": "integer",
+            "format": "int64",
+            "description": "服务器接收时间戳（毫秒）",
+            "example": 1707206400123
+          },
+          "client_ip": {
+            "type": "string",
+            "description": "客户端 IP 地址",
+            "example": "192.168.1.50"
+          },
+          "device_id": {
+            "type": "string",
+            "example": "phone_web"
+          },
+          "action": {
+            "type": "string",
+            "enum": ["copy", "paste", "paste_terminal", "type"],
+            "example": "paste"
+          },
+          "text": {
+            "type": "string",
+            "description": "发送的文本内容",
+            "example": "你好世界"
+          }
+        }
+      },
+      "HistoryListResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "example": 200
+          },
+          "message": {
+            "type": "string",
+            "example": "success"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HistoryItem"
+            },
+            "description": "历史记录列表（按时间倒序）"
+          },
+          "timestamp": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
+      },
+      "DeleteItemResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "example": 200
+          },
+          "message": {
+            "type": "string",
+            "example": "success"
+          },
+          "removed": {
+            "type": "integer",
+            "description": "删除的记录数",
+            "example": 1
+          }
+        }
+      },
+      "ClearHistoryResponse": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "integer",
+            "example": 200
+          },
+          "message": {
+            "type": "string",
+            "example": "success"
+          },
+          "cleared": {
+            "type": "integer",
+            "description": "清空的记录数",
+            "example": 10
+          }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/": {
+      "get": {
+        "tags": ["基础"],
+        "summary": "Web UI 页面",
+        "description": "返回手机端 Web UI 页面（HTML），用于在手机浏览器中操作语音输入。无需认证。",
+        "responses": {
+          "200": {
+            "description": "HTML 页面",
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/status": {
+      "get": {
+        "tags": ["基础"],
+        "summary": "服务状态检查",
+        "description": "返回服务运行状态、版本、配置等信息。无需认证。可用于健康检查。",
+        "responses": {
+          "200": {
+            "description": "服务正常运行",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StatusResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/input": {
+      "post": {
+        "tags": ["输入"],
+        "summary": "发送文本到电脑",
+        "description": "将文本复制到电脑剪贴板，并根据 action 参数执行相应的键盘操作。\n\n- `copy`: 仅复制到剪贴板\n- `paste`: 复制并模拟 Ctrl+V 粘贴\n- `paste_terminal`: 复制并模拟 Ctrl+Shift+V 终端粘贴（Linux）\n- `type`: 模拟逐字键入\n\n当 `restore_clipboard=true` 且 action 非 `copy` 时，粘贴完成后会恢复原有剪贴板内容。",
+        "security": [
+          {"TokenHeader": []},
+          {"TokenQuery": []}
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InputRequest"
+              },
+              "examples": {
+                "简单复制": {
+                  "summary": "仅复制到剪贴板",
+                  "value": {
+                    "text": "你好世界",
+                    "action": "copy"
+                  }
+                },
+                "自动粘贴": {
+                  "summary": "复制并粘贴，完成后恢复剪贴板",
+                  "value": {
+                    "text": "语音输入的文字",
+                    "action": "paste",
+                    "device_id": "phone_web",
+                    "timestamp": 1707206400000,
+                    "restore_clipboard": true
+                  }
+                },
+                "终端粘贴": {
+                  "summary": "复制并粘贴到终端",
+                  "value": {
+                    "text": "ls -la",
+                    "action": "paste_terminal"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "发送成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InputResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "请求格式错误（JSON 无效或缺少 text 字段）",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "code": 400,
+                  "message": "Missing required field: text",
+                  "error_detail": "The \"text\" field is required"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token 认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "code": 401,
+                  "message": "Unauthorized",
+                  "error_detail": "Invalid or missing token"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "IP 不在白名单中",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "code": 403,
+                  "message": "IP not allowed",
+                  "error_detail": "Your IP address is not in the whitelist"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "请求体过大",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "服务器内部错误",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/history": {
+      "get": {
+        "tags": ["历史记录"],
+        "summary": "获取历史记录列表",
+        "description": "返回所有发送历史记录，按时间倒序排列。记录数上限由服务端 `history_size` 配置决定。",
+        "security": [
+          {"TokenHeader": []},
+          {"TokenQuery": []}
+        ],
+        "responses": {
+          "200": {
+            "description": "获取成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryListResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token 认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "IP 不在白名单中",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["历史记录"],
+        "summary": "清空全部历史记录",
+        "description": "删除所有发送历史记录，操作不可撤销。",
+        "security": [
+          {"TokenHeader": []},
+          {"TokenQuery": []}
+        ],
+        "responses": {
+          "200": {
+            "description": "清空成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClearHistoryResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token 认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "IP 不在白名单中",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/history/{item_id}": {
+      "delete": {
+        "tags": ["历史记录"],
+        "summary": "删除单条历史记录",
+        "description": "根据 ID 删除指定的历史记录。",
+        "security": [
+          {"TokenHeader": []},
+          {"TokenQuery": []}
+        ],
+        "parameters": [
+          {
+            "name": "item_id",
+            "in": "path",
+            "required": true,
+            "description": "历史记录 ID",
+            "schema": {
+              "type": "integer",
+              "example": 1
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "删除成功",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteItemResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token 认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "IP 不在白名单中",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/history/export": {
+      "get": {
+        "tags": ["历史记录"],
+        "summary": "导出历史记录",
+        "description": "以 JSON 或 CSV 格式导出全部历史记录，返回文件下载。",
+        "security": [
+          {"TokenHeader": []},
+          {"TokenQuery": []}
+        ],
+        "parameters": [
+          {
+            "name": "format",
+            "in": "query",
+            "required": false,
+            "description": "导出格式",
+            "schema": {
+              "type": "string",
+              "enum": ["json", "csv"],
+              "default": "json"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "导出成功",
+            "content": {
+              "application/json": {
+                "description": "JSON 格式导出",
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/HistoryItem"
+                  }
+                }
+              },
+              "text/csv": {
+                "description": "CSV 格式导出",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "headers": {
+              "Content-Disposition": {
+                "description": "文件下载头",
+                "schema": {
+                  "type": "string",
+                  "example": "attachment; filename=voice_history.json"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Token 认证失败",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "IP 不在白名单中",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

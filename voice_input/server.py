@@ -85,6 +85,54 @@ def create_app(config: AppConfig) -> Flask:
     app.voice_history_lock = threading.Lock()
     app.voice_history_counter = 0
 
+    # 预热 keyboard / pyclip，强制完成底层设备初始化
+    # keyboard 在 Linux 上首次按键时才创建 /dev/uinput 虚拟设备，
+    # 内核注册该设备需要数百毫秒，期间发送的按键事件会丢失。
+    # 因此在启动时做一次空按键，等待设备就绪后再提供服务。
+    try:
+        import pyclip
+        pyclip.paste()  # 预热剪贴板后端
+        logging.info("pyclip 模块已预热")
+    except Exception:
+        pass
+    try:
+        import keyboard
+        if platform.system() != "Windows":
+            keyboard.press_and_release("shift")
+            time.sleep(0.5)  # 等待内核注册 uinput 虚拟设备
+        logging.info("keyboard 模块已预热（uinput 设备已就绪）")
+    except Exception:
+        pass
+
+    # ==================== 认证辅助 ====================
+
+    def _check_auth():
+        """对敏感路由执行 IP 白名单 + Token 校验，返回错误响应或 None"""
+        cfg = app.voice_config
+        client_ip = get_client_ip(request)
+        if not is_ip_allowed(client_ip, cfg.allowed_ips):
+            logging.warning(f"IP未授权访问: {client_ip}")
+            return (
+                jsonify({"code": 403, "message": "IP not allowed",
+                         "error_detail": "Your IP address is not in the whitelist"}),
+                403,
+            )
+        # 对于非 POST 请求（GET/DELETE），data 为 None，token 仅从 header/query 取
+        data = None
+        if request.is_json:
+            try:
+                data = request.get_json(silent=True)
+            except Exception:
+                pass
+        if not is_token_valid(request, data, cfg.token, cfg.require_token):
+            logging.warning(f"Token校验失败: {client_ip}")
+            return (
+                jsonify({"code": 401, "message": "Unauthorized",
+                         "error_detail": "Invalid or missing token"}),
+                401,
+            )
+        return None
+
     # ==================== 路由 ====================
 
     @app.route("/", methods=["GET"])
@@ -108,7 +156,7 @@ def create_app(config: AppConfig) -> Flask:
             {
                 "code": 200,
                 "message": "service running",
-                "version": "2.0.0",
+                "version": "1.0.1",
                 "server_ip": local_ip,
                 "port": cfg.port,
                 "platform": platform.system(),
@@ -121,6 +169,9 @@ def create_app(config: AppConfig) -> Flask:
 
     @app.route("/history", methods=["GET"])
     def get_history():
+        auth_err = _check_auth()
+        if auth_err:
+            return auth_err
         with app.voice_history_lock:
             items = list(app.voice_history)
         return jsonify(
@@ -134,6 +185,9 @@ def create_app(config: AppConfig) -> Flask:
 
     @app.route("/history/<int:item_id>", methods=["DELETE"])
     def delete_history_item(item_id):
+        auth_err = _check_auth()
+        if auth_err:
+            return auth_err
         with app.voice_history_lock:
             before = len(app.voice_history)
             app.voice_history = deque(
@@ -145,6 +199,9 @@ def create_app(config: AppConfig) -> Flask:
 
     @app.route("/history", methods=["DELETE"])
     def clear_history():
+        auth_err = _check_auth()
+        if auth_err:
+            return auth_err
         with app.voice_history_lock:
             count = len(app.voice_history)
             app.voice_history.clear()
@@ -152,6 +209,9 @@ def create_app(config: AppConfig) -> Flask:
 
     @app.route("/history/export", methods=["GET"])
     def export_history():
+        auth_err = _check_auth()
+        if auth_err:
+            return auth_err
         fmt = request.args.get("format", "json")
         with app.voice_history_lock:
             items = list(app.voice_history)
@@ -192,20 +252,11 @@ def create_app(config: AppConfig) -> Flask:
     def handle_input():
         cfg = app.voice_config
 
-        # 1. IP 白名单验证
+        # 1. IP + Token 认证
+        auth_err = _check_auth()
+        if auth_err:
+            return auth_err
         client_ip = get_client_ip(request)
-        if not is_ip_allowed(client_ip, cfg.allowed_ips):
-            logging.warning(f"IP未授权访问: {client_ip}")
-            return (
-                jsonify(
-                    {
-                        "code": 403,
-                        "message": "IP not allowed",
-                        "error_detail": "Your IP address is not in the whitelist",
-                    }
-                ),
-                403,
-            )
 
         # 2. JSON 解析
         try:
@@ -223,21 +274,7 @@ def create_app(config: AppConfig) -> Flask:
                 400,
             )
 
-        # 3. Token 校验
-        if not is_token_valid(request, data, cfg.token, cfg.require_token):
-            logging.warning(f"Token校验失败: {client_ip}")
-            return (
-                jsonify(
-                    {
-                        "code": 401,
-                        "message": "Unauthorized",
-                        "error_detail": "Invalid or missing token",
-                    }
-                ),
-                401,
-            )
-
-        # 4. 必需字段
+        # 3. 必需字段
         if not data or "text" not in data:
             logging.error("缺少必需字段 'text'")
             return (

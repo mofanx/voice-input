@@ -450,8 +450,7 @@
     const action = mode ? mode.value : 'paste';
     const payload = { text, timestamp: Date.now(), device_id: 'phone_web', action,
       restore_clipboard: (action !== 'copy' && restoreClipEl.checked) };
-    const headers = { 'Content-Type': 'application/json' };
-    if (tokenEl && tokenEl.value.trim()) headers['X-Auth-Token'] = tokenEl.value.trim();
+    const headers = Object.assign({'Content-Type': 'application/json'}, authHeaders());
 
     sending = true;
     $('send').disabled = true;
@@ -477,12 +476,19 @@
   }
   $('send').addEventListener('click', doSend);
 
+  // ===== Auth helper =====
+  function authHeaders() {
+    const h = {};
+    if (tokenEl && tokenEl.value.trim()) h['X-Auth-Token'] = tokenEl.value.trim();
+    return h;
+  }
+
   // ===== History =====
   let allItems = [];
 
   async function loadHistory() {
     try {
-      const res = await fetch('/history');
+      const res = await fetch('/history', { headers: authHeaders() });
       const j = await res.json();
       allItems = (j.items || []);
       renderHistory();
@@ -537,7 +543,7 @@
     if (!btn) return;
     const id = btn.getAttribute('data-id');
     try {
-      await fetch('/history/' + id, { method: 'DELETE' });
+      await fetch('/history/' + id, { method: 'DELETE', headers: authHeaders() });
       allItems = allItems.filter(i => String(i.id) !== String(id));
       renderHistory();
     } catch (ex) { toast('删除失败', false); }
@@ -547,20 +553,28 @@
   $('histClear').addEventListener('click', async () => {
     if (!confirm('确定清空全部历史记录？')) return;
     try {
-      await fetch('/history', { method: 'DELETE' });
+      await fetch('/history', { method: 'DELETE', headers: authHeaders() });
       allItems = [];
       renderHistory();
       toast('已清空', true);
     } catch (ex) { toast('清空失败', false); }
   });
 
-  // Export
-  $('histExportJson').addEventListener('click', () => {
-    window.open('/history/export?format=json', '_blank');
-  });
-  $('histExportCsv').addEventListener('click', () => {
-    window.open('/history/export?format=csv', '_blank');
-  });
+  // Export (use fetch with auth, then trigger download)
+  async function doExport(fmt) {
+    try {
+      const res = await fetch('/history/export?format=' + fmt, { headers: authHeaders() });
+      if (!res.ok) { toast('导出失败: ' + res.status, false); return; }
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'voice_history.' + fmt;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    } catch (e) { toast('导出失败', false); }
+  }
+  $('histExportJson').addEventListener('click', () => doExport('json'));
+  $('histExportCsv').addEventListener('click', () => doExport('csv'));
 
   // Auto-focus
   setTimeout(() => textEl.focus(), 300);
