@@ -110,6 +110,11 @@
             "default": false,
             "description": "粘贴完成后是否恢复原有剪贴板内容（仅在 action 非 copy 时生效）"
           },
+          "press_enter": {
+            "type": "boolean",
+            "default": false,
+            "description": "粘贴完成后是否自动模拟回车键（仅在 action 非 copy 时生效）"
+          },
           "token": {
             "type": "string",
             "description": "认证 Token（也可通过 Header 或 Query 传递）"

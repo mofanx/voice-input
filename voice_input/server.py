@@ -20,7 +20,7 @@ _PASTE_DELAY = 0.08  # 剪贴板写入后等待时间（秒），确保 X11 剪�
 _RESTORE_DELAY = 0.15  # 粘贴操作后等待时间（秒），确保目标程序完成读取剪贴板
 
 
-def _do_keyboard_action(action: str, text: str):
+def _do_keyboard_action(action: str, text: str, press_enter: bool = False):
     """执行键盘操作（跨平台），在 copy 之后调用"""
     try:
         import keyboard
@@ -46,6 +46,11 @@ def _do_keyboard_action(action: str, text: str):
         elif action == "type":
             keyboard.write(text)
             logging.info("已执行键入操作")
+            
+        if press_enter and action in ("paste", "paste_terminal", "type"):
+            time.sleep(_PASTE_DELAY)  # 等待粘贴操作完成
+            keyboard.press_and_release("enter")
+            logging.info("已执行回车操作")
     except Exception as e:
         logging.warning(f"自动粘贴失败（文本已复制到剪贴板）: {e}")
 
@@ -156,7 +161,7 @@ def create_app(config: AppConfig) -> Flask:
             {
                 "code": 200,
                 "message": "service running",
-                "version": "1.0.1",
+                "version": "1.0.2",
                 "server_ip": local_ip,
                 "port": cfg.port,
                 "platform": platform.system(),
@@ -294,6 +299,7 @@ def create_app(config: AppConfig) -> Flask:
         device_id = data.get("device_id", "unknown")
         action = data.get("action", "paste" if cfg.auto_paste else "copy")
         restore_clipboard = bool(data.get("restore_clipboard", False))
+        press_enter = bool(data.get("press_enter", False))
 
         # 6. 时间戳偏差警告
         current_time = int(time.time() * 1000)
@@ -329,7 +335,7 @@ def create_app(config: AppConfig) -> Flask:
             )
 
             if action in ("paste", "paste_terminal", "type"):
-                _do_keyboard_action(action, text)
+                _do_keyboard_action(action, text, press_enter)
 
             # 恢复原有剪贴板内容
             if need_restore:

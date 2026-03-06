@@ -196,7 +196,9 @@ sudo systemctl status voice-input
   "text": "要发送的文本",
   "action": "paste",
   "device_id": "phone_web",
-  "timestamp": 1700000000000
+  "timestamp": 1700000000000,
+  "restore_clipboard": false,
+  "press_enter": false
 }
 ```
 
@@ -205,6 +207,10 @@ sudo systemctl status voice-input
 - `paste` — 复制 + Ctrl+V
 - `paste_terminal` — 复制 + Ctrl+Shift+V（Linux）；Windows 下等同 paste
 - `type` — 逐字键入
+
+**附加参数**：
+- `restore_clipboard`：布尔值，是否在粘贴后恢复电脑原有剪贴板内容（仅 `action` 非 `copy` 时有效）
+- `press_enter`：布尔值，是否在粘贴后自动模拟回车键（仅 `action` 非 `copy` 时有效）
 
 **鉴权**：Token 可通过 `X-Auth-Token` Header、`?token=` Query 参数或 Body 中 `token` 字段传递。
 

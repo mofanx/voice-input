@@ -311,6 +311,17 @@
 
   <div class="toggle-row">
     <div class="toggle-label">
+      <span>发送后回车</span>
+      <span class="hint">粘贴后自动模拟回车键（开启时将自动关闭“自动发送”）</span>
+    </div>
+    <label class="switch">
+      <input type="checkbox" id="pressEnter">
+      <span class="slider"></span>
+    </label>
+  </div>
+
+  <div class="toggle-row">
+    <div class="toggle-label">
       <span>恢复剪贴板</span>
       <span class="hint">粘贴后恢复电脑原有剪贴板内容（仅复制模式下无效）</span>
     </div>
@@ -383,6 +394,7 @@
 
   const autoSendEl = $('autoSend');
   const autoClearEl = $('autoClear');
+  const pressEnterEl = $('pressEnter');
   const restoreClipEl = $('restoreClip');
   const delaySlider = $('delaySlider');
   const delayVal = $('delayVal');
@@ -395,11 +407,20 @@
   }
   restoreToggle(autoSendEl, 'autoSend', false);
   restoreToggle(autoClearEl, 'autoClear', true);
+  restoreToggle(pressEnterEl, 'pressEnter', false);
   restoreToggle(restoreClipEl, 'restoreClip', true);
   restoreToggle(histEnabledEl, 'historyEnabled', false);
 
   autoSendEl.addEventListener('change', () => { LS_SET('autoSend', autoSendEl.checked ? '1' : '0'); updateDelayRow(); });
   autoClearEl.addEventListener('change', () => LS_SET('autoClear', autoClearEl.checked ? '1' : '0'));
+  pressEnterEl.addEventListener('change', () => {
+    LS_SET('pressEnter', pressEnterEl.checked ? '1' : '0');
+    if (pressEnterEl.checked && autoSendEl.checked) {
+      autoSendEl.checked = false;
+      LS_SET('autoSend', '0');
+      updateDelayRow();
+    }
+  });
   restoreClipEl.addEventListener('change', () => LS_SET('restoreClip', restoreClipEl.checked ? '1' : '0'));
   histEnabledEl.addEventListener('change', () => {
     LS_SET('historyEnabled', histEnabledEl.checked ? '1' : '0');
@@ -449,7 +470,8 @@
     const mode = document.querySelector('input[name="mode"]:checked');
     const action = mode ? mode.value : 'paste';
     const payload = { text, timestamp: Date.now(), device_id: 'phone_web', action,
-      restore_clipboard: (action !== 'copy' && restoreClipEl.checked) };
+      restore_clipboard: (action !== 'copy' && restoreClipEl.checked),
+      press_enter: (action !== 'copy' && pressEnterEl.checked) };
     const headers = Object.assign({'Content-Type': 'application/json'}, authHeaders());
 
     sending = true;
