@@ -9,8 +9,11 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#007aff">
 <link rel="manifest" href="/manifest.json">
-<link rel="apple-touch-icon" href="/icon.svg">
+<link rel="icon" type="image/svg+xml" href="/icon.svg">
+<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
+<link rel="apple-touch-icon" sizes="192x192" href="/icon-192.png">
 <title>语音输入</title>
+<script>(function(){var t=localStorage.getItem('vi_theme');if(!t)t=matchMedia('(prefers-color-scheme:dark)').matches?'dark':'light';document.documentElement.setAttribute('data-theme',t)})()</script>
 <style>
   :root {
     --bg: #f5f5f7;
@@ -30,6 +33,19 @@
     --safe-left: env(safe-area-inset-left, 0px);
     --safe-right: env(safe-area-inset-right, 0px);
   }
+  [data-theme="dark"] {
+    --bg: #1c1c1e;
+    --card: #2c2c2e;
+    --border: #3a3a3c;
+    --text: #f5f5f7;
+    --text2: #98989d;
+    --accent: #0a84ff;
+    --accent-active: #409cff;
+    --success: #30d158;
+    --error: #ff453a;
+    --warn: #ff9f0a;
+    --shadow: 0 1px 3px rgba(0,0,0,.3), 0 1px 2px rgba(0,0,0,.2);
+  }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html { height: 100%; }
   body {
@@ -44,9 +60,19 @@
   .container { max-width: 600px; margin: 0 auto; }
 
   /* Header */
-  .header { text-align: center; padding: 16px 0 4px; }
+  .header { text-align: center; padding: 16px 0 4px; position: relative; }
   .header h1 { font-size: 21px; font-weight: 700; letter-spacing: -0.3px; }
   .header .server-info { font-size: 12px; color: var(--text2); margin-top: 2px; }
+  .theme-btn {
+    position: absolute; right: 0; top: 12px;
+    background: var(--card); border: 1px solid var(--border);
+    width: 36px; height: 36px; border-radius: 50%;
+    font-size: 18px; cursor: pointer; display: flex;
+    align-items: center; justify-content: center;
+    box-shadow: var(--shadow); transition: background .2s;
+    color: var(--text); line-height: 1;
+  }
+  .theme-btn:active { opacity: .7; }
 
   /* Card */
   .card {
@@ -219,6 +245,48 @@
   .history-item .hi-del:active { background: var(--bg); color: var(--error); }
   .history-empty { text-align: center; color: var(--text2); font-size: 13px; padding: 16px 0; }
 
+  /* Key operations */
+  .key-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(58px, 1fr));
+    gap: 6px; margin-bottom: 12px;
+  }
+  .key-btn {
+    padding: 10px 2px; font-size: 13px; font-weight: 600;
+    border: 1.5px solid var(--border); border-radius: 10px;
+    background: var(--bg); color: var(--text);
+    cursor: pointer; text-align: center;
+    transition: background .15s, transform .1s;
+    -webkit-user-select: none; user-select: none;
+  }
+  .key-btn:active { background: var(--accent); color: #fff; transform: scale(.95); }
+  .key-custom { display: flex; gap: 8px; margin-bottom: 10px; }
+  .key-custom input {
+    flex: 1; font-size: 14px; padding: 10px 12px;
+    border: 2px solid var(--border); border-radius: 10px;
+    background: var(--bg); color: var(--text); outline: none;
+    -webkit-appearance: none; appearance: none;
+  }
+  .key-custom input:focus { border-color: var(--accent); }
+  .key-send-btn {
+    padding: 10px 16px; font-size: 14px; font-weight: 600;
+    border: none; border-radius: 10px;
+    background: var(--accent); color: #fff;
+    cursor: pointer; white-space: nowrap;
+  }
+  .key-send-btn:active { background: var(--accent-active); }
+  .key-options { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; }
+  .key-opt { display: flex; align-items: center; gap: 6px; }
+  .key-opt label { font-size: 12px; color: var(--text2); white-space: nowrap; }
+  .key-opt input[type="number"] {
+    width: 64px; font-size: 13px; padding: 7px 8px;
+    border: 1.5px solid var(--border); border-radius: 8px;
+    background: var(--bg); color: var(--text); outline: none;
+    text-align: center; -webkit-appearance: none; appearance: none;
+  }
+  .key-opt input:focus { border-color: var(--accent); }
+  .key-opt span { font-size: 12px; color: var(--text2); }
+
   /* Connection card */
   .conn-hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
   .conn-hdr h3 { font-size: 14px; font-weight: 600; }
@@ -285,6 +353,7 @@
 
 <div class="header">
   <h1>语音输入</h1>
+  <button class="theme-btn" id="themeToggle" title="切换深色/浅色模式"></button>
   <div class="server-info" id="serverInfo">{{ server_ip }}:{{ port }}</div>
 </div>
 
@@ -384,6 +453,48 @@
   </div>
 </div>
 
+<!-- Key Operations -->
+<div class="card">
+  <div class="section-hdr">
+    <h3>快捷操作</h3>
+    <label class="switch">
+      <input type="checkbox" id="keyPanelEnabled">
+      <span class="slider"></span>
+    </label>
+  </div>
+  <div id="keyPanel" style="display:none; margin-top:10px;">
+    <div class="key-grid">
+      <button class="key-btn" data-key="left">←</button>
+      <button class="key-btn" data-key="up">↑</button>
+      <button class="key-btn" data-key="down">↓</button>
+      <button class="key-btn" data-key="right">→</button>
+      <button class="key-btn" data-key="backspace">⌫</button>
+      <button class="key-btn" data-key="delete">Del</button>
+      <button class="key-btn" data-key="enter">Enter</button>
+      <button class="key-btn" data-key="tab">Tab</button>
+      <button class="key-btn" data-key="escape">Esc</button>
+      <button class="key-btn" data-key="space">Space</button>
+      <button class="key-btn" data-key="click">Click</button>
+      <button class="key-btn" data-key="right_click">RClick</button>
+    </div>
+    <div class="key-custom">
+      <input type="text" id="customKey" placeholder="如: ctrl+c, alt+tab, shift+enter" autocomplete="off" spellcheck="false">
+      <button class="key-send-btn" id="customKeySend">发送</button>
+    </div>
+    <div class="key-options">
+      <div class="key-opt">
+        <label>次数</label>
+        <input type="number" id="keyCount" value="1" min="1" max="100">
+      </div>
+      <div class="key-opt">
+        <label>间隔</label>
+        <input type="number" id="keyInterval" value="100" min="50" max="5000" step="50">
+        <span>ms</span>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- History -->
 <div class="card">
   <div class="section-hdr">
@@ -426,6 +537,20 @@
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => el.classList.remove('show'), 2500);
   }
+
+  // ===== Theme Toggle =====
+  const themeBtn = $('themeToggle');
+  function applyTheme(t) {
+    document.documentElement.setAttribute('data-theme', t);
+    themeBtn.textContent = t === 'dark' ? '\u2600\uFE0F' : '\uD83C\uDF19';
+    LS_SET('theme', t);
+    const mc = document.querySelector('meta[name="theme-color"]');
+    if (mc) mc.setAttribute('content', t === 'dark' ? '#1c1c1e' : '#007aff');
+  }
+  applyTheme(document.documentElement.getAttribute('data-theme') || 'light');
+  themeBtn.addEventListener('click', () => {
+    applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+  });
 
   // ===== Server URL & Token =====
   function getBaseUrl() {
@@ -713,6 +838,48 @@
   }
   $('histExportJson').addEventListener('click', () => doExport('json'));
   $('histExportCsv').addEventListener('click', () => doExport('csv'));
+
+  // ===== Key Operations =====
+  const keyPanelEl = $('keyPanelEnabled');
+  restoreToggle(keyPanelEl, 'keyPanelEnabled', false);
+  $('keyPanel').style.display = keyPanelEl.checked ? 'block' : 'none';
+  keyPanelEl.addEventListener('change', () => {
+    LS_SET('keyPanelEnabled', keyPanelEl.checked ? '1' : '0');
+    $('keyPanel').style.display = keyPanelEl.checked ? 'block' : 'none';
+  });
+
+  let keySending = false;
+  async function sendKey(key) {
+    if (keySending) return;
+    const count = Math.max(1, Math.min(parseInt($('keyCount').value) || 1, 100));
+    const interval = Math.max(50, parseInt($('keyInterval').value) || 100);
+    const payload = { key, count, interval };
+    const headers = Object.assign({'Content-Type': 'application/json'}, authHeaders());
+    keySending = true;
+    try {
+      const res = await fetch(getBaseUrl() + '/key', { method: 'POST', headers, body: JSON.stringify(payload) });
+      const j = await res.json().catch(() => null);
+      if (res.ok) {
+        toast(key + (count > 1 ? ' \u00d7' + count : '') + ' \u2713', true);
+      } else {
+        toast('\u5931\u8d25: ' + (j && j.message ? j.message : res.status), false);
+      }
+    } catch (e) {
+      toast('\u7f51\u7edc\u9519\u8bef: ' + e.message, false);
+    } finally { keySending = false; }
+  }
+
+  $('keyPanel').addEventListener('click', e => {
+    const btn = e.target.closest('.key-btn');
+    if (btn) sendKey(btn.dataset.key);
+  });
+  $('customKeySend').addEventListener('click', () => {
+    const k = $('customKey').value.trim();
+    if (k) sendKey(k);
+  });
+  $('customKey').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); const k = $('customKey').value.trim(); if (k) sendKey(k); }
+  });
 
   // Auto-focus
   setTimeout(() => textEl.focus(), 300);

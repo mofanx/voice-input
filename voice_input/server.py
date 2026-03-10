@@ -3,11 +3,15 @@
 import io
 import csv
 import json
+import math
 import os
 import platform
+import struct
+import subprocess
 import time
 import logging
 import threading
+import zlib
 from collections import deque
 
 from flask import Flask, request, jsonify, render_template, Response
@@ -75,6 +79,127 @@ def _restore_clipboard(old_content: bytes | None):
         logging.info("已恢复原有剪贴板内容")
     except Exception as e:
         logging.warning(f"恢复剪贴板失败: {e}")
+
+
+def _make_icon_png(size: int) -> bytes:
+    """生成麦克风图标 PNG（纯 Python，无外部依赖）"""
+    BG = (0, 122, 255, 255)
+    FG = (255, 255, 255, 255)
+    TR = (0, 0, 0, 0)
+    cr = size * 0.198
+    cx = size / 2.0
+    mic_hw = size * 0.094
+    mic_top = size * 0.198
+    mic_bot = size * 0.565
+    mic_r = mic_hw
+    arc_r = size * 0.219
+    arc_cy = size * 0.490
+    arc_w = size * 0.047
+    pole_top = size * 0.708
+    pole_bot = size * 0.807
+    pole_hw = size * 0.024
+    base_cy = size * 0.807
+    base_hw = size * 0.104
+    base_hh = size * 0.024
+
+    rows = bytearray()
+    for y in range(size):
+        rows.append(0)
+        for x in range(size):
+            in_bg = True
+            if x < cr and y < cr:
+                if (x - cr) ** 2 + (y - cr) ** 2 > cr * cr:
+                    in_bg = False
+            elif x >= size - cr and y < cr:
+                if (x - size + 1 + cr) ** 2 + (y - cr) ** 2 > cr * cr:
+                    in_bg = False
+            elif x < cr and y >= size - cr:
+                if (x - cr) ** 2 + (y - size + 1 + cr) ** 2 > cr * cr:
+                    in_bg = False
+            elif x >= size - cr and y >= size - cr:
+                if (x - size + 1 + cr) ** 2 + (y - size + 1 + cr) ** 2 > cr * cr:
+                    in_bg = False
+            if not in_bg:
+                rows.extend(TR)
+                continue
+            fg = False
+            dx = x - cx
+            if abs(dx) <= mic_hw:
+                if mic_top + mic_r <= y <= mic_bot - mic_r:
+                    fg = True
+                elif y < mic_top + mic_r:
+                    if dx * dx + (y - mic_top - mic_r) ** 2 <= mic_r * mic_r:
+                        fg = True
+                elif y > mic_bot - mic_r:
+                    if dx * dx + (y - mic_bot + mic_r) ** 2 <= mic_r * mic_r:
+                        fg = True
+            if not fg and y >= arc_cy:
+                dist = math.sqrt(dx * dx + (y - arc_cy) ** 2)
+                if abs(dist - arc_r) <= arc_w:
+                    fg = True
+            if not fg and pole_top <= y <= pole_bot and abs(dx) <= pole_hw:
+                fg = True
+            if not fg and abs(y - base_cy) <= base_hh and abs(dx) <= base_hw:
+                fg = True
+            rows.extend(FG if fg else BG)
+
+    def _chunk(ctype, data):
+        c = ctype + data
+        return struct.pack(">I", len(data)) + c + struct.pack(">I", zlib.crc32(c) & 0xFFFFFFFF)
+
+    ihdr = struct.pack(">IIBBBBB", size, size, 8, 6, 0, 0, 0)
+    idat = zlib.compress(bytes(rows), 9)
+    return (
+        b"\x89PNG\r\n\x1a\n"
+        + _chunk(b"IHDR", ihdr)
+        + _chunk(b"IDAT", idat)
+        + _chunk(b"IEND", b"")
+    )
+
+
+def _do_key_press(key: str, count: int = 1, interval: float = 0.1):
+    """执行键盘按键操作"""
+    try:
+        import keyboard
+    except ImportError:
+        logging.warning("keyboard 模块未安装，跳过按键操作")
+        return
+    for i in range(count):
+        keyboard.press_and_release(key)
+        logging.info(f"已执行按键: {key} ({i + 1}/{count})")
+        if i < count - 1:
+            time.sleep(interval)
+
+
+def _do_mouse_click(button: str = "left", count: int = 1, interval: float = 0.1):
+    """执行鼠标点击（跨平台）"""
+    for i in range(count):
+        if platform.system() == "Windows":
+            try:
+                import ctypes
+                if button == "right":
+                    ctypes.windll.user32.mouse_event(8, 0, 0, 0, 0)
+                    ctypes.windll.user32.mouse_event(16, 0, 0, 0, 0)
+                else:
+                    ctypes.windll.user32.mouse_event(2, 0, 0, 0, 0)
+                    ctypes.windll.user32.mouse_event(4, 0, 0, 0, 0)
+            except Exception as e:
+                logging.warning(f"鼠标点击失败: {e}")
+                return
+        else:
+            try:
+                click_code = "0xC1" if button == "right" else "0xC0"
+                subprocess.run(["sudo", "ydotool", "click", click_code], timeout=2,
+                               capture_output=True)
+            except FileNotFoundError:
+                logging.warning("ydotool 未安装，无法模拟鼠标点击（sudo apt install ydotool）")
+                return
+            except Exception as e:
+                logging.warning(f"鼠标点击失败: {e}")
+                return
+        logging.info(f"已执行鼠标{button == 'right' and '右键' or '左键'}点击 ({i + 1}/{count})")
+        if i < count - 1:
+            time.sleep(interval)
 
 
 def create_app(config: AppConfig) -> Flask:
@@ -385,6 +510,11 @@ def create_app(config: AppConfig) -> Flask:
 
     # ==================== PWA 静态资源 ====================
 
+    logging.info("正在生成 PWA 图标...")
+    _ICON_192 = _make_icon_png(192)
+    _ICON_512 = _make_icon_png(512)
+    logging.info(f"PWA 图标已生成 (192: {len(_ICON_192)} B, 512: {len(_ICON_512)} B)")
+
     _ICON_SVG = """<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'>
   <rect width='192' height='192' rx='38' fill='#007aff'/>
   <rect x='78' y='38' width='36' height='70' rx='18' fill='white'/>
@@ -400,21 +530,32 @@ def create_app(config: AppConfig) -> Flask:
         "name": "语音输入",
         "short_name": "语音输入",
         "description": "跨设备语音输入传输系统",
+        "id": "/",
         "start_url": "/",
+        "scope": "/",
         "display": "standalone",
         "orientation": "portrait",
         "background_color": "#f5f5f7",
         "theme_color": "#007aff",
         "lang": "zh-CN",
+        "categories": ["utilities", "productivity"],
         "icons": [
+            {"src": "/icon-192.png", "sizes": "192x192",
+             "type": "image/png", "purpose": "any"},
+            {"src": "/icon-512.png", "sizes": "512x512",
+             "type": "image/png", "purpose": "any"},
+            {"src": "/icon-192.png", "sizes": "192x192",
+             "type": "image/png", "purpose": "maskable"},
+            {"src": "/icon-512.png", "sizes": "512x512",
+             "type": "image/png", "purpose": "maskable"},
             {"src": "/icon.svg", "sizes": "any",
-             "type": "image/svg+xml", "purpose": "any maskable"}
+             "type": "image/svg+xml", "purpose": "any"}
         ]
     }, ensure_ascii=False, indent=2)
 
     _SW_JS = r"""
-const CACHE = 'vi-v1';
-const SHELL = ['/', '/manifest.json', '/icon.svg'];
+const CACHE = 'vi-v2';
+const SHELL = ['/', '/manifest.json', '/icon.svg', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(
@@ -436,12 +577,9 @@ self.addEventListener('activate', e => {
 
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
-  // Don't intercept cross-origin requests (user-configured server)
   if (url.origin !== location.origin) return;
-  // API paths: always network, never cache
-  if (['/input','/history','/status'].some(p =>
+  if (['/input','/history','/status','/key'].some(p =>
         url.pathname === p || url.pathname.startsWith(p + '/'))) return;
-  // App shell: stale-while-revalidate
   e.respondWith(
     caches.open(CACHE).then(cache =>
       cache.match(e.request).then(cached => {
@@ -469,6 +607,52 @@ self.addEventListener('fetch', e => {
     def pwa_icon():
         return Response(_ICON_SVG, mimetype="image/svg+xml",
                         headers={"Cache-Control": "public, max-age=86400"})
+
+    @app.route("/icon-192.png", methods=["GET"])
+    def pwa_icon_192():
+        return Response(_ICON_192, mimetype="image/png",
+                        headers={"Cache-Control": "public, max-age=86400"})
+
+    @app.route("/icon-512.png", methods=["GET"])
+    def pwa_icon_512():
+        return Response(_ICON_512, mimetype="image/png",
+                        headers={"Cache-Control": "public, max-age=86400"})
+
+    # ==================== 快捷按键 ====================
+
+    @app.route("/key", methods=["POST"])
+    def handle_key():
+        auth_err = _check_auth()
+        if auth_err:
+            return auth_err
+
+        try:
+            data = request.get_json(force=True)
+        except Exception:
+            return jsonify({"code": 400, "message": "Invalid JSON"}), 400
+
+        key = (data.get("key") or "").strip()
+        if not key:
+            return jsonify({"code": 400, "message": "Missing key"}), 400
+
+        count = max(1, min(int(data.get("count", 1)), 100))
+        interval = max(0.05, min(float(data.get("interval", 100)) / 1000, 5.0))
+
+        try:
+            if key in ("click", "right_click"):
+                _do_mouse_click("right" if key == "right_click" else "left", count, interval)
+            else:
+                _do_key_press(key, count, interval)
+            return jsonify({
+                "code": 200, "message": "success",
+                "key": key, "count": count
+            })
+        except Exception as e:
+            logging.error(f"按键操作失败: {e}")
+            return jsonify({
+                "code": 500, "message": "Key action failed",
+                "error_detail": str(e)
+            }), 500
 
     # ==================== 错误处理器 ====================
 

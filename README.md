@@ -133,6 +133,9 @@ log_level: "info"
 - 全屏运行（无浏览器地址栏）
 - 离线可访问（App Shell 由 Service Worker 缓存）
 - 主屏幕图标 + 启动画面
+- 深色 / 浅色模式切换（自动跟随系统主题，也可手动切换）
+
+**广泛兼容性**：服务端自动生成 192×192 和 512×512 PNG 图标（纯 Python，无额外依赖），同时提供 SVG 图标，确保 Android Chrome/Edge、Samsung Internet、iOS Safari 等主流浏览器均可正常安装。
 
 ### Android（Chrome / Edge）
 
@@ -151,6 +154,7 @@ log_level: "info"
 
 网页端针对手机屏幕优化，支持以下功能：
 
+- **深色 / 浅色模式**：头部🌙/☀️按钮切换，默认跟随系统主题，偏好自动保存
 - **连接设置**：手动设置服务器地址（留空则使用当前页面地址），实时显示连接状态
 - **Token 配置**：Token 输入框常驻，方便 PWA 安装后切换服务器时重新配置
 - **发送模式**：仅复制 / 自动粘贴（Ctrl+V）/ 终端粘贴（Ctrl+Shift+V）
@@ -163,7 +167,11 @@ log_level: "info"
   - 按日期筛选
   - 单条删除 / 清空全部
   - 导出为 JSON 或 CSV 文件
-- **设置持久化**：服务器地址、Token、模式、开关、延迟时间等自动保存到浏览器 localStorage
+- **快捷操作**：独立于文本发送的扩展功能，支持：
+  - 预设按键：← ↑ ↓ → 、Backspace、Delete、Enter、Tab、Esc、Space、鼠标左键、鼠标右键
+  - 自定义按键 / 组合键（如 `ctrl+c`、`alt+tab`、`shift+enter`）
+  - 可配置发送次数（1–100）和发送间隔（50–5000 ms）
+- **设置持久化**：服务器地址、Token、主题、模式、开关、延迟时间等自动保存到浏览器 localStorage
 - **响应式布局**：自适应不同手机屏幕尺寸，支持竖屏与横屏
 
 ## 生产部署
@@ -212,12 +220,15 @@ sudo systemctl status voice-input
 | `/status` | GET | 无 | 服务状态 |
 | `/manifest.json` | GET | 无 | PWA 清单 |
 | `/sw.js` | GET | 无 | Service Worker |
-| `/icon.svg` | GET | 无 | 应用图标 |
+| `/icon.svg` | GET | 无 | 应用图标（SVG） |
+| `/icon-192.png` | GET | 无 | 应用图标 192×192 |
+| `/icon-512.png` | GET | 无 | 应用图标 512×512 |
 | `/history` | GET | ✅ | 发送历史列表 |
 | `/history/<id>` | DELETE | ✅ | 删除单条历史 |
 | `/history` | DELETE | ✅ | 清空全部历史 |
 | `/history/export` | GET | ✅ | 导出历史（?format=json 或 csv） |
 | `/input` | POST | ✅ | 接收文本 |
+| `/key` | POST | ✅ | 发送按键 / 鼠标点击 |
 
 所有接口均支持 CORS（`Access-Control-Allow-Origin: *`），方便 PWA 在跨域场景下访问自定义服务器地址。
 
@@ -245,6 +256,26 @@ sudo systemctl status voice-input
 - `press_enter`：布尔值，是否在粘贴后自动模拟回车键（仅 `action` 非 `copy` 时有效）
 
 **鉴权**：Token 可通过 `X-Auth-Token` Header、`?token=` Query 参数或 Body 中 `token` 字段传递。
+
+### POST /key
+
+```json
+{
+  "key": "up",
+  "count": 1,
+  "interval": 100
+}
+```
+
+**key 取值**：
+- 方向键：`up` / `down` / `left` / `right`
+- 功能键：`enter` / `tab` / `escape` / `space` / `backspace` / `delete`
+- 鼠标：`click`（左键点击）、`right_click`（右键点击），Linux 下使用 `ydotool`
+- 组合键：`ctrl+c`、`alt+tab`、`ctrl+shift+t` 等（使用 `keyboard` 库语法）
+
+**参数**：
+- `count`：执行次数（1–100，默认 1）
+- `interval`：每次间隔毫秒数（50–5000，默认 100）
 
 ## 常见问题
 
@@ -274,6 +305,13 @@ sudo systemctl status voice-input
 - Service Worker 使用 stale-while-revalidate 策略，页面会在后台自动更新
 - 更新完成后页面顶部会弹出提示，下次打开 PWA 即使用新版本
 - 也可在浏览器开发者工具 → Application → Service Workers → 点击「Update」强制更新
+
+### 快捷操作的鼠标点击无效
+
+- **Linux**：需要安装 `ydotool`：`sudo apt install ydotool`
+- **Linux**：当前实现会通过 `sudo ydotool` 执行点击，请确保当前运行环境允许该命令正常执行
+- **Linux Wayland**：不同桌面环境兼容性不同，如无效请确认 `ydotoold` 服务状态和权限配置
+- **Windows**：无需额外安装，通过 `ctypes` 直接调用 Win32 API
 
 ### 打包发布
 
