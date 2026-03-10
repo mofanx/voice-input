@@ -169,7 +169,10 @@ log_level: "info"
   - 导出为 JSON 或 CSV 文件
 - **快捷操作**：独立于文本发送的扩展功能，支持：
   - 预设按键：← ↑ ↓ → 、Backspace、Delete、Enter、Tab、Esc、Space、鼠标左键、鼠标右键
+  - 修饰键构造：可先选中 `Ctrl` / `Shift` / `Alt`，再点击预设按键，组合为 `ctrl+tab`、`ctrl+shift+enter`、`ctrl+1`、`ctrl+alt+tab` 等
   - 自定义按键 / 组合键（如 `ctrl+c`、`alt+tab`、`shift+enter`）
+  - 修饰键也可与自定义输入框内容叠加组合，例如先勾选 `Ctrl` + `Alt`，再在输入框中填写 `tab`，即可发送 `ctrl+alt+tab`
+  - 发送后清空：提供独立开关，发送成功后自动清空快捷操作输入框，便于连续发送不同组合键
   - 可配置发送次数（1–100）和发送间隔（50–5000 ms）
 - **设置持久化**：服务器地址、Token、主题、模式、开关、延迟时间等自动保存到浏览器 localStorage
 - **响应式布局**：自适应不同手机屏幕尺寸，支持竖屏与横屏
@@ -272,6 +275,18 @@ sudo systemctl status voice-input
 - 功能键：`enter` / `tab` / `escape` / `space` / `backspace` / `delete`
 - 鼠标：`click`（左键点击）、`right_click`（右键点击），Linux 下使用 `ydotool`
 - 组合键：`ctrl+c`、`alt+tab`、`ctrl+shift+t` 等（使用 `keyboard` 库语法）
+
+**常见别名兼容**：
+- `windows` / `cmd` / `command` / `meta` / `super` 会自动转换为 `win`（通过 scan code 125 发送，确保 Linux 下可用）
+- `ctl` / `control` 会自动转换为 `ctrl`
+- `option` / `opt` 会自动转换为 `alt`
+- `esc` -> `escape`，`del` -> `delete`，`return` -> `enter`
+- 因此你可以直接输入：`win+d`、`cmd+d`、`meta+d`、`ctl+esc`、`option+tab`
+
+**前端组合方式**：
+- 可先点击 `Ctrl` / `Shift` / `Alt` / `Win` 修饰键按钮，再点击预设按键
+- 也可先选择修饰键，再在自定义输入框中输入 `tab`、`d`、`1`、`enter` 等基础键名
+- 前端会自动拼接为标准组合字符串，例如：`win+d`、`ctrl+alt+tab`、`ctrl+1`、`ctrl+shift+enter`
 
 **参数**：
 - `count`：执行次数（1–100，默认 1）

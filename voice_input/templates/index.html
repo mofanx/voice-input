@@ -251,6 +251,9 @@
     grid-template-columns: repeat(auto-fill, minmax(58px, 1fr));
     gap: 6px; margin-bottom: 12px;
   }
+  .key-modifiers {
+    margin-bottom: 10px;
+  }
   .key-btn {
     padding: 10px 2px; font-size: 13px; font-weight: 600;
     border: 1.5px solid var(--border); border-radius: 10px;
@@ -260,6 +263,13 @@
     -webkit-user-select: none; user-select: none;
   }
   .key-btn:active { background: var(--accent); color: #fff; transform: scale(.95); }
+  .key-btn.is-active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .key-preview {
+    font-size: 12px;
+    color: var(--text2);
+    margin: 0 0 10px;
+    min-height: 18px;
+  }
   .key-custom { display: flex; gap: 8px; margin-bottom: 10px; }
   .key-custom input {
     flex: 1; font-size: 14px; padding: 10px 12px;
@@ -463,6 +473,13 @@
     </label>
   </div>
   <div id="keyPanel" style="display:none; margin-top:10px;">
+    <div class="key-grid key-modifiers">
+      <button class="key-btn key-modifier" type="button" data-modifier="ctrl">Ctrl</button>
+      <button class="key-btn key-modifier" type="button" data-modifier="shift">Shift</button>
+      <button class="key-btn key-modifier" type="button" data-modifier="alt">Alt</button>
+      <button class="key-btn key-modifier" type="button" data-modifier="win">Win</button>
+    </div>
+    <div class="key-preview" id="keyPreview">当前组合：无</div>
     <div class="key-grid">
       <button class="key-btn" data-key="left">←</button>
       <button class="key-btn" data-key="up">↑</button>
@@ -478,8 +495,18 @@
       <button class="key-btn" data-key="right_click">RClick</button>
     </div>
     <div class="key-custom">
-      <input type="text" id="customKey" placeholder="如: ctrl+c, alt+tab, shift+enter" autocomplete="off" spellcheck="false">
+      <input type="text" id="customKey" placeholder="如: ctrl+c, win+d, alt+tab" autocomplete="off" spellcheck="false">
       <button class="key-send-btn" id="customKeySend">发送</button>
+    </div>
+    <div class="toggle-row">
+      <div class="toggle-label">
+        <span>发送后清空</span>
+        <span class="hint">快捷按键发送成功后自动清空输入框</span>
+      </div>
+      <label class="switch">
+        <input type="checkbox" id="keyAutoClear" checked>
+        <span class="slider"></span>
+      </label>
     </div>
     <div class="key-options">
       <div class="key-opt">
@@ -847,20 +874,63 @@
     LS_SET('keyPanelEnabled', keyPanelEl.checked ? '1' : '0');
     $('keyPanel').style.display = keyPanelEl.checked ? 'block' : 'none';
   });
+  const keyAutoClearEl = $('keyAutoClear');
+  restoreToggle(keyAutoClearEl, 'keyAutoClear', true);
+
+  const modifierButtons = Array.from(document.querySelectorAll('.key-modifier'));
+  let selectedModifiers = [];
+  function normalizeCombo(baseKey) {
+    const parts = [];
+    selectedModifiers.forEach(m => { if (!parts.includes(m)) parts.push(m); });
+    String(baseKey || '').split('+').map(s => s.trim().toLowerCase()).filter(Boolean).forEach(p => {
+      if (!parts.includes(p)) parts.push(p);
+    });
+    return parts.join('+');
+  }
+  function updateKeyPreview(baseKey) {
+    const combo = normalizeCombo(baseKey || '');
+    $('keyPreview').textContent = '当前组合：' + (combo || '无');
+  }
+  function renderModifiers() {
+    modifierButtons.forEach(btn => {
+      btn.classList.toggle('is-active', selectedModifiers.includes(btn.dataset.modifier));
+    });
+    updateKeyPreview($('customKey').value.trim());
+  }
+  modifierButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const mod = btn.dataset.modifier;
+      if (selectedModifiers.includes(mod)) {
+        selectedModifiers = selectedModifiers.filter(v => v !== mod);
+      } else {
+        selectedModifiers = [...selectedModifiers, mod];
+      }
+      renderModifiers();
+    });
+  });
 
   let keySending = false;
   async function sendKey(key) {
     if (keySending) return;
+    if ((key === 'click' || key === 'right_click') && selectedModifiers.length) {
+      toast('鼠标点击不支持与修饰键组合', false);
+      return;
+    }
     const count = Math.max(1, Math.min(parseInt($('keyCount').value) || 1, 100));
     const interval = Math.max(50, parseInt($('keyInterval').value) || 100);
-    const payload = { key, count, interval };
+    const finalKey = normalizeCombo(key);
+    const payload = { key: finalKey, count, interval };
     const headers = Object.assign({'Content-Type': 'application/json'}, authHeaders());
     keySending = true;
     try {
       const res = await fetch(getBaseUrl() + '/key', { method: 'POST', headers, body: JSON.stringify(payload) });
       const j = await res.json().catch(() => null);
       if (res.ok) {
-        toast(key + (count > 1 ? ' \u00d7' + count : '') + ' \u2713', true);
+        if (keyAutoClearEl.checked) {
+          $('customKey').value = '';
+          updateKeyPreview('');
+        }
+        toast(finalKey + (count > 1 ? ' \u00d7' + count : '') + ' \u2713', true);
       } else {
         toast('\u5931\u8d25: ' + (j && j.message ? j.message : res.status), false);
       }
@@ -871,15 +941,17 @@
 
   $('keyPanel').addEventListener('click', e => {
     const btn = e.target.closest('.key-btn');
-    if (btn) sendKey(btn.dataset.key);
+    if (btn && !btn.classList.contains('key-modifier')) sendKey(btn.dataset.key);
   });
   $('customKeySend').addEventListener('click', () => {
     const k = $('customKey').value.trim();
     if (k) sendKey(k);
   });
+  $('customKey').addEventListener('input', e => updateKeyPreview(e.target.value.trim()));
   $('customKey').addEventListener('keydown', e => {
     if (e.key === 'Enter') { e.preventDefault(); const k = $('customKey').value.trim(); if (k) sendKey(k); }
   });
+  renderModifiers();
 
   // Auto-focus
   setTimeout(() => textEl.focus(), 300);

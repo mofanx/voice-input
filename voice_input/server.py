@@ -157,6 +157,93 @@ def _make_icon_png(size: int) -> bytes:
     )
 
 
+# ---- 按键别名 & scan code 映射 ----
+# keyboard 库在 Linux 上对 "windows" 键名解析不稳定，
+# 因此对特殊键直接使用 scan code 来 press/release。
+# Linux scan codes: Super_L=125, Super_R=126
+_KEY_ALIAS = {
+    "ctl": "ctrl",
+    "control": "ctrl",
+    "cmd": "win",
+    "command": "win",
+    "windows": "win",
+    "winkey": "win",
+    "super": "win",
+    "meta": "win",
+    "option": "alt",
+    "opt": "alt",
+    "esc": "escape",
+    "del": "delete",
+    "return": "enter",
+}
+
+# 需要用 scan code 发送的特殊键（名称 -> Linux scan code）
+_SCANCODE_MAP = {
+    "win": 125,        # Super_L / Windows 键
+}
+
+
+def _normalize_key(name: str) -> str:
+    """单个键名规范化"""
+    lower = name.strip().lower()
+    return _KEY_ALIAS.get(lower, lower)
+
+
+def _normalize_key_combo(key: str) -> str:
+    """将完整组合键字符串中的每个部分规范化"""
+    parts = [_normalize_key(p) for p in str(key or "").split("+") if p.strip()]
+    return "+".join(parts)
+
+
+def _press_key(keyboard_module, name: str, action: str = "press"):
+    """按下或释放单个键，优先用 scan code，否则用键名"""
+    sc = _SCANCODE_MAP.get(name)
+    if sc is not None:
+        if action == "press":
+            keyboard_module.press(sc)
+        elif action == "release":
+            keyboard_module.release(sc)
+        else:
+            keyboard_module.press(sc)
+            time.sleep(0.05)
+            keyboard_module.release(sc)
+    else:
+        if action == "press":
+            keyboard_module.press(name)
+        elif action == "release":
+            keyboard_module.release(name)
+        else:
+            keyboard_module.press_and_release(name)
+
+
+def _press_combo(keyboard_module, normalized_key: str):
+    """发送组合键：手动按下修饰键 → 触发主键 → 逆序释放修饰键"""
+    parts = [p for p in normalized_key.split("+") if p]
+    if not parts:
+        raise ValueError("Empty key combo")
+
+    if len(parts) == 1:
+        _press_key(keyboard_module, parts[0], "tap")
+        return
+
+    modifiers = parts[:-1]
+    main_key = parts[-1]
+    pressed = []
+    try:
+        for mod in modifiers:
+            _press_key(keyboard_module, mod, "press")
+            pressed.append(mod)
+        time.sleep(0.02)
+        _press_key(keyboard_module, main_key, "tap")
+        time.sleep(0.02)
+    finally:
+        for mod in reversed(pressed):
+            try:
+                _press_key(keyboard_module, mod, "release")
+            except Exception:
+                pass
+
+
 def _do_key_press(key: str, count: int = 1, interval: float = 0.1):
     """执行键盘按键操作"""
     try:
@@ -164,9 +251,10 @@ def _do_key_press(key: str, count: int = 1, interval: float = 0.1):
     except ImportError:
         logging.warning("keyboard 模块未安装，跳过按键操作")
         return
+    normalized_key = _normalize_key_combo(key)
     for i in range(count):
-        keyboard.press_and_release(key)
-        logging.info(f"已执行按键: {key} ({i + 1}/{count})")
+        _press_combo(keyboard, normalized_key)
+        logging.info(f"已执行按键: {key} -> {normalized_key} ({i + 1}/{count})")
         if i < count - 1:
             time.sleep(interval)
 
@@ -286,7 +374,7 @@ def create_app(config: AppConfig) -> Flask:
             {
                 "code": 200,
                 "message": "service running",
-                "version": "1.0.3",
+                "version": "1.1.0",
                 "server_ip": local_ip,
                 "port": cfg.port,
                 "platform": platform.system(),
@@ -635,8 +723,8 @@ self.addEventListener('fetch', e => {
         if not key:
             return jsonify({"code": 400, "message": "Missing key"}), 400
 
-        count = max(1, min(int(data.get("count", 1)), 100))
-        interval = max(0.05, min(float(data.get("interval", 100)) / 1000, 5.0))
+        count = max(1, min(int(data.get("count", 1)), 10000))
+        interval = max(0.05, min(float(data.get("interval", 10000)) / 1000, 5.0))
 
         try:
             if key in ("click", "right_click"):
