@@ -4,8 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="语音输入">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="theme-color" content="#f5f5f7">
+<meta name="theme-color" content="#007aff">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icon.svg">
 <title>语音输入</title>
 <style>
   :root {
@@ -215,6 +219,40 @@
   .history-item .hi-del:active { background: var(--bg); color: var(--error); }
   .history-empty { text-align: center; color: var(--text2); font-size: 13px; padding: 16px 0; }
 
+  /* Connection card */
+  .conn-hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .conn-hdr h3 { font-size: 14px; font-weight: 600; }
+  .conn-badge {
+    font-size: 18px; line-height: 1; transition: color .3s;
+    color: var(--text2);
+  }
+  .conn-badge.ok  { color: var(--success); }
+  .conn-badge.err { color: var(--error); }
+  .conn-badge.checking { color: var(--warn); }
+  .conn-input {
+    width: 100%; font-size: 14px; padding: 10px 12px;
+    border: 2px solid var(--border); border-radius: 10px; background: var(--bg);
+    color: var(--text); outline: none; transition: border-color .2s;
+    -webkit-appearance: none; appearance: none; margin-bottom: 8px;
+  }
+  .conn-input:focus { border-color: var(--accent); }
+  .conn-input:last-child { margin-bottom: 0; }
+  .conn-hint { font-size: 11px; color: var(--text2); margin-top: 4px; line-height: 1.4; }
+
+  /* PWA install banner */
+  .install-banner {
+    display: none; align-items: center; gap: 10px;
+    background: var(--accent); color: #fff; border-radius: var(--radius);
+    padding: 12px 14px; margin: 10px 0; cursor: pointer;
+    font-size: 14px; font-weight: 500;
+  }
+  .install-banner.show { display: flex; }
+  .install-banner span { flex: 1; }
+  .install-banner .ib-icon { font-size: 22px; }
+  .install-banner .ib-close {
+    font-size: 18px; opacity: .8; padding: 0 4px; cursor: pointer;
+  }
+
   /* Responsive: small phones */
   @media (max-width: 374px) {
     body { padding: calc(8px + var(--safe-top)) calc(8px + var(--safe-right)) calc(16px + var(--safe-bottom)) calc(8px + var(--safe-left)); }
@@ -247,16 +285,30 @@
 
 <div class="header">
   <h1>语音输入</h1>
-  <div class="server-info">{{ server_ip }}:{{ port }}</div>
+  <div class="server-info" id="serverInfo">{{ server_ip }}:{{ port }}</div>
 </div>
 
 <div id="toast" class="toast"></div>
 
-{% if require_token %}
-<div class="card token-row">
-  <input id="token" type="password" placeholder="输入 Token" autocomplete="off">
+<!-- PWA install banner -->
+<div class="install-banner" id="installBanner">
+  <span class="ib-icon">📲</span>
+  <span>添加到主屏幕，获得原生应用体验</span>
+  <span class="ib-close" id="installClose">✕</span>
 </div>
-{% endif %}
+
+<!-- Connection settings -->
+<div class="card">
+  <div class="conn-hdr">
+    <h3>连接设置</h3>
+    <span class="conn-badge" id="connBadge" title="连接状态">●</span>
+  </div>
+  <input class="conn-input" id="serverUrl" type="url"
+    placeholder="服务器地址（留空则使用当前）" autocomplete="off" spellcheck="false">
+  <input class="conn-input" id="token" type="password"
+    placeholder="Token（未设置则留空）" autocomplete="off">
+  <div class="conn-hint" id="connHint">当前连接：<span id="connAddr"></span></div>
+</div>
 
 <!-- Input -->
 <div class="card">
@@ -375,12 +427,76 @@
     toastTimer = setTimeout(() => el.classList.remove('show'), 2500);
   }
 
-  // ===== Token =====
-  const tokenEl = $('token');
-  if (tokenEl) {
-    tokenEl.value = LS('token') || '';
-    tokenEl.addEventListener('input', () => LS_SET('token', tokenEl.value));
+  // ===== Server URL & Token =====
+  function getBaseUrl() {
+    return (LS('serverUrl') || '').trim().replace(/\/$/, '');
   }
+
+  const serverUrlEl = $('serverUrl');
+  const tokenEl = $('token');
+
+  serverUrlEl.value = LS('serverUrl') || '';
+  tokenEl.value = LS('token') || '';
+
+  function updateConnHint() {
+    const addr = getBaseUrl() || window.location.origin;
+    $('connAddr').textContent = addr;
+    $('serverInfo').textContent = addr.replace(/^https?:\/\//, '');
+  }
+  updateConnHint();
+
+  async function checkConnection() {
+    const badge = $('connBadge');
+    badge.className = 'conn-badge checking';
+    badge.title = '连接中...';
+    try {
+      const ctrl = new AbortController();
+      const tid = setTimeout(() => ctrl.abort(), 4000);
+      const res = await fetch(getBaseUrl() + '/status', { signal: ctrl.signal });
+      clearTimeout(tid);
+      if (res.ok) {
+        badge.className = 'conn-badge ok';
+        badge.title = '已连接';
+      } else {
+        badge.className = 'conn-badge err';
+        badge.title = '连接失败: ' + res.status;
+      }
+    } catch (e) {
+      badge.className = 'conn-badge err';
+      badge.title = '无法连接: ' + (e.name === 'AbortError' ? '超时' : e.message);
+    }
+  }
+
+  serverUrlEl.addEventListener('change', () => {
+    LS_SET('serverUrl', serverUrlEl.value.trim());
+    updateConnHint();
+    checkConnection();
+  });
+  tokenEl.addEventListener('input', () => LS_SET('token', tokenEl.value));
+
+  // Check connection on load
+  checkConnection();
+
+  // ===== PWA Install Banner =====
+  let deferredInstallPrompt = null;
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    if (!LS('installDismissed')) $('installBanner').classList.add('show');
+  });
+  $('installBanner').addEventListener('click', async () => {
+    if (!deferredInstallPrompt) return;
+    deferredInstallPrompt.prompt();
+    const choice = await deferredInstallPrompt.userChoice;
+    deferredInstallPrompt = null;
+    $('installBanner').classList.remove('show');
+    if (choice.outcome === 'accepted') LS_SET('installDismissed', '1');
+  });
+  $('installClose').addEventListener('click', e => {
+    e.stopPropagation();
+    $('installBanner').classList.remove('show');
+    LS_SET('installDismissed', '1');
+  });
 
   // ===== Restore settings =====
   const savedMode = LS('mode');
@@ -479,7 +595,7 @@
     $('send').textContent = '发送中...';
 
     try {
-      const res = await fetch('/input', { method: 'POST', headers, body: JSON.stringify(payload) });
+      const res = await fetch(getBaseUrl() + '/input', { method: 'POST', headers, body: JSON.stringify(payload) });
       const j = await res.json().catch(() => null);
       if (res.ok) {
         toast('已发送到电脑', true);
@@ -510,7 +626,7 @@
 
   async function loadHistory() {
     try {
-      const res = await fetch('/history', { headers: authHeaders() });
+      const res = await fetch(getBaseUrl() + '/history', { headers: authHeaders() });
       const j = await res.json();
       allItems = (j.items || []);
       renderHistory();
@@ -565,7 +681,7 @@
     if (!btn) return;
     const id = btn.getAttribute('data-id');
     try {
-      await fetch('/history/' + id, { method: 'DELETE', headers: authHeaders() });
+      await fetch(getBaseUrl() + '/history/' + id, { method: 'DELETE', headers: authHeaders() });
       allItems = allItems.filter(i => String(i.id) !== String(id));
       renderHistory();
     } catch (ex) { toast('删除失败', false); }
@@ -575,7 +691,7 @@
   $('histClear').addEventListener('click', async () => {
     if (!confirm('确定清空全部历史记录？')) return;
     try {
-      await fetch('/history', { method: 'DELETE', headers: authHeaders() });
+      await fetch(getBaseUrl() + '/history', { method: 'DELETE', headers: authHeaders() });
       allItems = [];
       renderHistory();
       toast('已清空', true);
@@ -585,7 +701,7 @@
   // Export (use fetch with auth, then trigger download)
   async function doExport(fmt) {
     try {
-      const res = await fetch('/history/export?format=' + fmt, { headers: authHeaders() });
+      const res = await fetch(getBaseUrl() + '/history/export?format=' + fmt, { headers: authHeaders() });
       if (!res.ok) { toast('导出失败: ' + res.status, false); return; }
       const blob = await res.blob();
       const a = document.createElement('a');
@@ -600,6 +716,20 @@
 
   // Auto-focus
   setTimeout(() => textEl.focus(), 300);
+
+  // ===== Service Worker =====
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').then(reg => {
+      reg.addEventListener('updatefound', () => {
+        const w = reg.installing;
+        w.addEventListener('statechange', () => {
+          if (w.state === 'installed' && navigator.serviceWorker.controller) {
+            toast('应用已更新，下次打开即生效', true);
+          }
+        });
+      });
+    }).catch(() => {});
+  }
 })();
 </script>
 </body>

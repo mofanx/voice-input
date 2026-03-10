@@ -71,6 +71,8 @@ python voice_server.py -p 8080
 
 **手机端操作**：手机浏览器打开「手机页面」地址，在文本框里用语音输入法输入文字，点发送即可。
 
+> **PWA 提示**：Chrome / Edge 浏览器会出现「添加到主屏幕」横幅，点击后可将网页安装为应用，获得全屏、无浏览器工具栏的原生体验。iOS Safari 可点击分享按钮 → 添加到主屏幕。
+
 ## 命令行参数
 
 ```
@@ -124,19 +126,44 @@ log_level: "info"
 | `VOICE_INPUT_HISTORY_SIZE` | 历史条数 |
 | `VOICE_INPUT_LOG_LEVEL` | 日志级别 |
 
+## PWA 安装
+
+本项目支持 Progressive Web App（PWA），可将网页安装为桌面 / 主屏幕应用，获得类原生体验：
+
+- 全屏运行（无浏览器地址栏）
+- 离线可访问（App Shell 由 Service Worker 缓存）
+- 主屏幕图标 + 启动画面
+
+### Android（Chrome / Edge）
+
+1. 手机浏览器访问服务地址，页面顶部出现「添加到主屏幕」横幅，点击安装
+2. 或浏览器菜单 → 「添加到主屏幕」/ 「安装应用」
+
+### iOS（Safari）
+
+1. Safari 访问服务地址
+2. 点击底部分享按钮（方块+箭头图标）
+3. 选择「添加到主屏幕」
+
+> **注意**：PWA 安装需要通过 HTTP（局域网）或 HTTPS 访问，不支持直接打开本地文件。
+
 ## 手机端功能
 
 网页端针对手机屏幕优化，支持以下功能：
 
+- **连接设置**：手动设置服务器地址（留空则使用当前页面地址），实时显示连接状态
+- **Token 配置**：Token 输入框常驻，方便 PWA 安装后切换服务器时重新配置
 - **发送模式**：仅复制 / 自动粘贴（Ctrl+V）/ 终端粘贴（Ctrl+Shift+V）
 - **自动发送**：开启后，语音输入停顿后自动发送，停顿时间可通过滑块自定义（0.5 - 5 秒）
 - **发送后清空**：发送成功后自动清空输入框，方便连续输入
+- **发送后回车**：粘贴完成后自动模拟回车键（开启时自动关闭「自动发送」）
+- **恢复剪贴板**：粘贴后自动恢复电脑原有剪贴板内容（仅复制模式下无效）
 - **发送历史**：默认关闭，开启后支持：
   - 关键词搜索
   - 按日期筛选
   - 单条删除 / 清空全部
   - 导出为 JSON 或 CSV 文件
-- **设置持久化**：Token、模式、开关、延迟时间等自动保存到浏览器 localStorage
+- **设置持久化**：服务器地址、Token、模式、开关、延迟时间等自动保存到浏览器 localStorage
 - **响应式布局**：自适应不同手机屏幕尺寸，支持竖屏与横屏
 
 ## 生产部署
@@ -179,15 +206,20 @@ sudo systemctl status voice-input
 
 ## API 接口
 
-| 路径 | 方法 | 说明 |
-|---|---|---|
-| `/` | GET | 手机端输入页面 |
-| `/status` | GET | 服务状态 |
-| `/history` | GET | 发送历史列表 |
-| `/history/<id>` | DELETE | 删除单条历史 |
-| `/history` | DELETE | 清空全部历史 |
-| `/history/export` | GET | 导出历史（?format=json 或 csv） |
-| `/input` | POST | 接收文本 |
+| 路径 | 方法 | 鉴权 | 说明 |
+|---|---|---|---|
+| `/` | GET | 无 | 手机端输入页面 |
+| `/status` | GET | 无 | 服务状态 |
+| `/manifest.json` | GET | 无 | PWA 清单 |
+| `/sw.js` | GET | 无 | Service Worker |
+| `/icon.svg` | GET | 无 | 应用图标 |
+| `/history` | GET | ✅ | 发送历史列表 |
+| `/history/<id>` | DELETE | ✅ | 删除单条历史 |
+| `/history` | DELETE | ✅ | 清空全部历史 |
+| `/history/export` | GET | ✅ | 导出历史（?format=json 或 csv） |
+| `/input` | POST | ✅ | 接收文本 |
+
+所有接口均支持 CORS（`Access-Control-Allow-Origin: *`），方便 PWA 在跨域场景下访问自定义服务器地址。
 
 ### POST /input
 
@@ -230,6 +262,18 @@ sudo systemctl status voice-input
   - Linux：`sudo ufw allow 8080/tcp`
   - Windows：在「Windows Defender 防火墙」中放行对应端口
 - 检查 IP 白名单配置是否包含手机所在网段
+
+### PWA 安装后无法连接
+
+- PWA 安装时使用的是安装时的服务器地址（存储在 localStorage）
+- 如服务器 IP 变动，打开 PWA 后在「连接设置」中更新服务器地址即可
+- 连接状态指示灯：🟡 检测中 / 🟢 已连接 / 🔴 连接失败
+
+### PWA 页面内容未更新
+
+- Service Worker 使用 stale-while-revalidate 策略，页面会在后台自动更新
+- 更新完成后页面顶部会弹出提示，下次打开 PWA 即使用新版本
+- 也可在浏览器开发者工具 → Application → Service Workers → 点击「Update」强制更新
 
 ### 打包发布
 

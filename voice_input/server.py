@@ -161,7 +161,7 @@ def create_app(config: AppConfig) -> Flask:
             {
                 "code": 200,
                 "message": "service running",
-                "version": "1.0.2",
+                "version": "1.0.3",
                 "server_ip": local_ip,
                 "port": cfg.port,
                 "platform": platform.system(),
@@ -365,6 +365,110 @@ def create_app(config: AppConfig) -> Flask:
                 ),
                 500,
             )
+
+    # ==================== CORS ====================
+
+    @app.before_request
+    def handle_options_preflight():
+        if request.method == "OPTIONS":
+            resp = app.make_response("")
+            resp.status_code = 204
+            return resp
+
+    @app.after_request
+    def add_cors_headers(resp):
+        resp.headers["Access-Control-Allow-Origin"] = "*"
+        resp.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE, OPTIONS"
+        resp.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Auth-Token"
+        resp.headers["Access-Control-Max-Age"] = "86400"
+        return resp
+
+    # ==================== PWA 静态资源 ====================
+
+    _ICON_SVG = """<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'>
+  <rect width='192' height='192' rx='38' fill='#007aff'/>
+  <rect x='78' y='38' width='36' height='70' rx='18' fill='white'/>
+  <path d='M54 94c0 23.2 18.8 42 42 42s42-18.8 42-42'
+        stroke='white' stroke-width='9' fill='none' stroke-linecap='round'/>
+  <line x1='96' y1='136' x2='96' y2='155'
+        stroke='white' stroke-width='9' stroke-linecap='round'/>
+  <line x1='76' y1='155' x2='116' y2='155'
+        stroke='white' stroke-width='9' stroke-linecap='round'/>
+</svg>"""
+
+    _MANIFEST = json.dumps({
+        "name": "语音输入",
+        "short_name": "语音输入",
+        "description": "跨设备语音输入传输系统",
+        "start_url": "/",
+        "display": "standalone",
+        "orientation": "portrait",
+        "background_color": "#f5f5f7",
+        "theme_color": "#007aff",
+        "lang": "zh-CN",
+        "icons": [
+            {"src": "/icon.svg", "sizes": "any",
+             "type": "image/svg+xml", "purpose": "any maskable"}
+        ]
+    }, ensure_ascii=False, indent=2)
+
+    _SW_JS = r"""
+const CACHE = 'vi-v1';
+const SHELL = ['/', '/manifest.json', '/icon.svg'];
+
+self.addEventListener('install', e => {
+  e.waitUntil(
+    caches.open(CACHE)
+      .then(c => c.addAll(SHELL))
+      .then(() => self.skipWaiting())
+  );
+});
+
+self.addEventListener('activate', e => {
+  e.waitUntil(
+    caches.keys()
+      .then(keys => Promise.all(
+        keys.filter(k => k !== CACHE).map(k => caches.delete(k))
+      ))
+      .then(() => self.clients.claim())
+  );
+});
+
+self.addEventListener('fetch', e => {
+  const url = new URL(e.request.url);
+  // Don't intercept cross-origin requests (user-configured server)
+  if (url.origin !== location.origin) return;
+  // API paths: always network, never cache
+  if (['/input','/history','/status'].some(p =>
+        url.pathname === p || url.pathname.startsWith(p + '/'))) return;
+  // App shell: stale-while-revalidate
+  e.respondWith(
+    caches.open(CACHE).then(cache =>
+      cache.match(e.request).then(cached => {
+        const fresh = fetch(e.request).then(resp => {
+          if (resp.ok) cache.put(e.request, resp.clone());
+          return resp;
+        }).catch(() => cached);
+        return cached || fresh;
+      })
+    )
+  );
+});
+"""
+
+    @app.route("/manifest.json", methods=["GET"])
+    def pwa_manifest():
+        return Response(_MANIFEST, mimetype="application/manifest+json")
+
+    @app.route("/sw.js", methods=["GET"])
+    def pwa_sw():
+        return Response(_SW_JS, mimetype="application/javascript",
+                        headers={"Service-Worker-Allowed": "/"})
+
+    @app.route("/icon.svg", methods=["GET"])
+    def pwa_icon():
+        return Response(_ICON_SVG, mimetype="image/svg+xml",
+                        headers={"Cache-Control": "public, max-age=86400"})
 
     # ==================== 错误处理器 ====================
 
