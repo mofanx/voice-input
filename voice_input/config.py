@@ -16,7 +16,7 @@ class AppConfig:
 
     # 安全
     allowed_ips: List[str] = field(
-        default_factory=lambda: ["192.168.0.0/16", "10.0.0.0/8", "172.16.0.0/12"]
+        default_factory=lambda: ["192.168.0.0/16", "10.0.0.0/8", "172.16.0.0/12", "127.0.0.0/8", "localhost"]
     )
     token: str = ""
     require_token: bool = False

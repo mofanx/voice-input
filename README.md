@@ -120,6 +120,8 @@ port: 8080
 allowed_ips:
   - "192.168.0.0/16"
   - "10.0.0.0/8"
+  - "127.0.0.0/8"
+  - "localhost"
 token: "your-secret-token"
 require_token: true
 auto_paste: true

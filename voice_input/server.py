@@ -378,7 +378,7 @@ def create_app(config: AppConfig) -> Flask:
             {
                 "code": 200,
                 "message": "service running",
-                "version": "1.2.0",
+                "version": "1.2.1",
                 "server_ip": local_ip,
                 "port": cfg.port,
                 "platform": platform.system(),

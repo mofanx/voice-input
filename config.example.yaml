@@ -11,6 +11,8 @@ allowed_ips:
   - "192.168.0.0/16"
   - "10.0.0.0/8"
   - "172.16.0.0/12"
+  - "127.0.0.0/8"
+  - "localhost"
 
 # Token 鉴权（留空或删除则不启用）
 # token: "your-secret-token-here"
