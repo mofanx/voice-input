@@ -303,6 +303,10 @@ def create_app(config: AppConfig) -> Flask:
     app.voice_history_lock = threading.Lock()
     app.voice_history_counter = 0
 
+    app.voice_messages = deque(maxlen=config.history_size)
+    app.voice_messages_lock = threading.Lock()
+    app.voice_messages_counter = 0
+
     # 预热 keyboard / pyclip，强制完成底层设备初始化
     # keyboard 在 Linux 上首次按键时才创建 /dev/uinput 虚拟设备，
     # 内核注册该设备需要数百毫秒，期间发送的按键事件会丢失。
@@ -374,7 +378,7 @@ def create_app(config: AppConfig) -> Flask:
             {
                 "code": 200,
                 "message": "service running",
-                "version": "1.1.0",
+                "version": "1.2.0",
                 "server_ip": local_ip,
                 "port": cfg.port,
                 "platform": platform.system(),
@@ -420,10 +424,21 @@ def create_app(config: AppConfig) -> Flask:
         auth_err = _check_auth()
         if auth_err:
             return auth_err
+        data = request.get_json(silent=True) or {}
+        ids = data.get("ids", [])
         with app.voice_history_lock:
-            count = len(app.voice_history)
-            app.voice_history.clear()
-        return jsonify({"code": 200, "message": "success", "cleared": count})
+            if ids:
+                id_set = set(ids)
+                before = len(app.voice_history)
+                app.voice_history = deque(
+                    (item for item in app.voice_history if item.get("id") not in id_set),
+                    maxlen=config.history_size,
+                )
+                removed = before - len(app.voice_history)
+            else:
+                removed = len(app.voice_history)
+                app.voice_history.clear()
+        return jsonify({"code": 200, "message": "success", "cleared": removed, "removed": removed})
 
     @app.route("/history/export", methods=["GET"])
     def export_history():
@@ -642,7 +657,7 @@ def create_app(config: AppConfig) -> Flask:
     }, ensure_ascii=False, indent=2)
 
     _SW_JS = r"""
-const CACHE = 'vi-v2';
+const CACHE = 'vi-v3';
 const SHELL = ['/', '/manifest.json', '/icon.svg', '/icon-192.png', '/icon-512.png'];
 
 self.addEventListener('install', e => {
@@ -666,7 +681,7 @@ self.addEventListener('activate', e => {
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
   if (url.origin !== location.origin) return;
-  if (['/input','/history','/status','/key'].some(p =>
+  if (['/input','/history','/status','/key','/message','/messages'].some(p =>
         url.pathname === p || url.pathname.startsWith(p + '/'))) return;
   e.respondWith(
     caches.open(CACHE).then(cache =>
@@ -741,6 +756,128 @@ self.addEventListener('fetch', e => {
                 "code": 500, "message": "Key action failed",
                 "error_detail": str(e)
             }), 500
+
+    # ==================== 消息接收 ====================
+
+    @app.route("/message", methods=["POST"])
+    def push_message():
+        auth_err = _check_auth()
+        if auth_err:
+            return auth_err
+        try:
+            data = request.get_json(force=True)
+        except Exception:
+            return jsonify({"code": 400, "message": "Invalid JSON"}), 400
+
+        content = str(data.get("content", "")).strip()
+        if not content:
+            return jsonify({"code": 400, "message": "Missing content"}), 400
+
+        source = str(data.get("source", "api")).strip() or "api"
+        current_time = int(time.time() * 1000)
+
+        with app.voice_messages_lock:
+            app.voice_messages_counter += 1
+            msg = {
+                "id": app.voice_messages_counter,
+                "content": content,
+                "source": source,
+                "timestamp": current_time,
+                "client_ip": get_client_ip(request),
+            }
+            app.voice_messages.append(msg)
+
+        logging.info(
+            f"收到消息 (id={msg['id']}, source={source}, len={len(content)})"
+        )
+        return jsonify(
+            {"code": 200, "message": "success", "id": msg["id"], "timestamp": current_time}
+        )
+
+    @app.route("/messages", methods=["GET"])
+    def get_messages():
+        auth_err = _check_auth()
+        if auth_err:
+            return auth_err
+        since_id = request.args.get("since", 0, type=int)
+        with app.voice_messages_lock:
+            items = list(app.voice_messages)
+        if since_id:
+            items = [m for m in items if m["id"] > since_id]
+        return jsonify(
+            {
+                "code": 200,
+                "message": "success",
+                "items": items,
+                "timestamp": int(time.time() * 1000),
+            }
+        )
+
+    @app.route("/messages/<int:msg_id>", methods=["DELETE"])
+    def delete_message(msg_id):
+        auth_err = _check_auth()
+        if auth_err:
+            return auth_err
+        with app.voice_messages_lock:
+            before = len(app.voice_messages)
+            app.voice_messages = deque(
+                (m for m in app.voice_messages if m["id"] != msg_id),
+                maxlen=config.history_size,
+            )
+            removed = before - len(app.voice_messages)
+        return jsonify({"code": 200, "message": "success", "removed": removed})
+
+    @app.route("/messages", methods=["DELETE"])
+    def clear_messages():
+        auth_err = _check_auth()
+        if auth_err:
+            return auth_err
+        data = request.get_json(silent=True) or {}
+        ids = data.get("ids", [])
+        with app.voice_messages_lock:
+            if ids:
+                id_set = set(ids)
+                before = len(app.voice_messages)
+                app.voice_messages = deque(
+                    (m for m in app.voice_messages if m["id"] not in id_set),
+                    maxlen=config.history_size,
+                )
+                removed = before - len(app.voice_messages)
+            else:
+                removed = len(app.voice_messages)
+                app.voice_messages.clear()
+        return jsonify({"code": 200, "message": "success", "removed": removed})
+
+    @app.route("/messages/export", methods=["GET"])
+    def export_messages():
+        auth_err = _check_auth()
+        if auth_err:
+            return auth_err
+        fmt = request.args.get("format", "json")
+        with app.voice_messages_lock:
+            items = list(app.voice_messages)
+        if fmt == "csv":
+            output = io.StringIO()
+            writer = csv.writer(output)
+            writer.writerow(["id", "time", "source", "content"])
+            for item in items:
+                t = time.strftime(
+                    "%Y-%m-%d %H:%M:%S", time.localtime(item["timestamp"] / 1000)
+                )
+                writer.writerow(
+                    [item.get("id", ""), t, item.get("source", ""), item.get("content", "")]
+                )
+            return Response(
+                output.getvalue(),
+                mimetype="text/csv",
+                headers={"Content-Disposition": "attachment; filename=messages.csv"},
+            )
+        else:
+            return Response(
+                json.dumps(items, ensure_ascii=False, indent=2),
+                mimetype="application/json",
+                headers={"Content-Disposition": "attachment; filename=messages.json"},
+            )
 
     # ==================== 错误处理器 ====================
 

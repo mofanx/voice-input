@@ -58,6 +58,24 @@ python -m voice_input -p 8080
 python voice_server.py -p 8080
 ```
 
+### 发送消息到手机端
+
+```bash
+# 直接发送文本（支持 Markdown）
+voice-input-send "你好，这是一条测试消息"
+
+# 从文件发送
+voice-input-send -f output.md -s cascade
+
+# 管道输入
+echo "## 任务完成" | voice-input-send
+
+# 指定服务器和 Token
+voice-input-send "消息" --server http://192.168.1.100:8080 -t $VOICE_INPUT_TOKEN
+```
+
+环境变量自动读取：`VOICE_INPUT_TOKEN`（鉴权）、`VOICE_INPUT_SERVER`（服务器地址，默认 http://localhost:8080）
+
 启动后终端会输出：
 ```
 ============================================================
@@ -163,9 +181,9 @@ log_level: "info"
 - **发送后回车**：粘贴完成后自动模拟回车键（开启时自动关闭「自动发送」）
 - **恢复剪贴板**：粘贴后自动恢复电脑原有剪贴板内容（仅复制模式下无效）
 - **发送历史**：默认关闭，开启后支持：
-  - 关键词搜索
-  - 按日期筛选
-  - 单条删除 / 清空全部
+  - 关键词搜索 + 按日期筛选
+  - 单条复制 / 单条删除
+  - 全选 / 反选 / 删除选中 / 清空全部
   - 导出为 JSON 或 CSV 文件
 - **快捷操作**：独立于文本发送的扩展功能，支持：
   - 预设按键：← ↑ ↓ → 、Backspace、Delete、Enter、Tab、Esc、Space、鼠标左键、鼠标右键
@@ -174,6 +192,15 @@ log_level: "info"
   - 修饰键也可与自定义输入框内容叠加组合，例如先勾选 `Ctrl` + `Alt`，再在输入框中填写 `tab`，即可发送 `ctrl+alt+tab`
   - 发送后清空：提供独立开关，发送成功后自动清空快捷操作输入框，便于连续发送不同组合键
   - 可配置发送次数（1–100）和发送间隔（50–5000 ms）
+- **消息接收**：支持从电脑端（大模型、脚本、API）回传消息到手机端，实现类似对话聊天的体验：
+  - 自动渲染 Markdown 语法（标题、列表、代码块、表格、链接等）
+  - 3 秒自动轮询新消息，新消息徽章提示
+  - 关键词搜索 + 日期筛选
+  - 批量选择（全选 / 反选）+ 批量删除
+  - 单条复制（复制原始 Markdown 源码）
+  - 导出为 JSON、CSV 或 Markdown
+  - 「↑ 继续发送」按钮快速跳回输入框，方便多轮交互
+- **折叠卡片**：连接设置、发送模式、消息接收等卡片均支持折叠/展开，状态自动保存
 - **设置持久化**：服务器地址、Token、主题、模式、开关、延迟时间等自动保存到浏览器 localStorage
 - **响应式布局**：自适应不同手机屏幕尺寸，支持竖屏与横屏
 
@@ -228,7 +255,7 @@ sudo systemctl status voice-input
 | `/icon-512.png` | GET | 无 | 应用图标 512×512 |
 | `/history` | GET | ✅ | 发送历史列表 |
 | `/history/<id>` | DELETE | ✅ | 删除单条历史 |
-| `/history` | DELETE | ✅ | 清空全部历史 |
+| `/history` | DELETE | ✅ | 清空全部历史（body `{"ids":[1,2]}` 批量删除） |
 | `/history/export` | GET | ✅ | 导出历史（?format=json 或 csv） |
 | `/input` | POST | ✅ | 接收文本 |
 | `/key` | POST | ✅ | 发送按键 / 鼠标点击 |
@@ -292,6 +319,57 @@ sudo systemctl status voice-input
 - `count`：执行次数（1–100，默认 1）
 - `interval`：每次间隔毫秒数（50–5000，默认 100）
 
+### 消息接收 API
+
+#### 推送消息
+
+```
+POST /message
+Content-Type: application/json
+
+{
+  "content": "消息内容，支持 **Markdown** 语法",
+  "source": "cascade"
+}
+```
+
+- `content`（必填）：消息内容，支持完整 Markdown 语法
+- `source`（可选）：来源标识，默认 `"api"`
+
+#### 获取消息列表
+
+```
+GET /messages              ← 全部消息
+GET /messages?since=5      ← ID > 5 的新消息（用于轮询）
+```
+
+#### 删除消息
+
+```
+DELETE /messages/<id>      ← 删除单条
+DELETE /messages           ← 清空全部
+DELETE /messages           ← body {"ids":[1,2,3]} 批量删除
+```
+
+#### 导出消息
+
+```
+GET /messages/export?format=json
+GET /messages/export?format=csv
+```
+
+#### 快速示例（curl）
+
+```bash
+# 发送 Markdown 消息
+curl -X POST http://localhost:8080/message \
+  -H "Content-Type: application/json" \
+  -d '{"content": "## 任务完成\n\n- [x] 功能A\n- [ ] 功能B", "source": "cascade"}'
+
+# 查看消息
+curl http://localhost:8080/messages
+```
+
 ## 常见问题
 
 ### 自动粘贴不生效
@@ -349,15 +427,18 @@ db_voice_input/
 ├── config.example.yaml     # 配置文件示例
 ├── .gitignore              # Git 忽略规则
 ├── voice_server.py         # 兼容旧入口
+├── .windsurf/workflows/    # Windsurf skill 工作流
+│   └── send-message.md     # 消息回传 skill（供大模型调用）
 └── voice_input/            # Python 包
     ├── __init__.py         # 包信息与版本
     ├── __main__.py         # python -m 入口
     ├── cli.py              # 命令行解析与启动
+    ├── send.py             # 消息发送 CLI（voice-input-send）
     ├── config.py           # 配置管理（YAML/环境变量/CLI 三级合并）
-    ├── server.py           # Flask 应用与路由
+    ├── server.py           # Flask 应用与路由（含消息接收 API）
     ├── utils.py            # 工具函数
     └── templates/
-        └── index.html      # 手机端 UI（响应式）
+        └── index.html      # 手机端 UI（响应式 + Markdown 渲染）
 ```
 
 ## License

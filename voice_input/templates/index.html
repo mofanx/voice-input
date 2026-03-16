@@ -243,6 +243,13 @@
     border-radius: 6px;
   }
   .history-item .hi-del:active { background: var(--bg); color: var(--error); }
+  .history-item .hi-check { margin: 0; flex-shrink: 0; align-self: center; }
+  .history-item .hi-copy, .msg-copy {
+    flex-shrink: 0; padding: 2px 8px; border: 1px solid var(--border);
+    background: var(--card); color: var(--text2); font-size: 11px; cursor: pointer;
+    border-radius: 6px; white-space: nowrap;
+  }
+  .history-item .hi-copy:active, .msg-copy:active { background: var(--bg); color: var(--accent); border-color: var(--accent); }
   .history-empty { text-align: center; color: var(--text2); font-size: 13px; padding: 16px 0; }
 
   /* Key operations */
@@ -356,6 +363,128 @@
     .input-area textarea { min-height: 80px; }
     .send-btn { padding: 10px; }
   }
+
+  /* Fold / Collapse */
+  .fold-hdr { cursor: pointer; }
+  .fold-arrow {
+    font-size: 13px; color: var(--text2); transition: transform .25s ease;
+    display: inline-block; line-height: 1; user-select: none; -webkit-user-select: none;
+  }
+  .fold-arrow.is-collapsed { transform: rotate(-90deg); }
+  .fold-body { margin-top: 10px; }
+  .fold-body.is-collapsed { display: none; }
+
+  /* Message panel */
+  .msg-badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 18px; height: 18px; padding: 0 5px;
+    background: var(--error); color: #fff; font-size: 11px; font-weight: 700;
+    border-radius: 9px; margin-left: 6px; vertical-align: middle;
+  }
+  .msg-badge:empty { display: none; }
+  .msg-toolbar {
+    display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 8px;
+  }
+  .msg-toolbar input[type="text"],
+  .msg-toolbar input[type="date"] {
+    flex: 1; min-width: 0; font-size: 13px; padding: 7px 10px;
+    border: 1px solid var(--border); border-radius: 8px; background: var(--bg);
+    outline: none; color: var(--text); -webkit-appearance: none; appearance: none;
+  }
+  .msg-toolbar input:focus { border-color: var(--accent); }
+  .msg-actions {
+    display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px;
+  }
+  .msg-actions button {
+    font-size: 12px; padding: 5px 10px; border: 1px solid var(--border);
+    border-radius: 8px; background: var(--card); color: var(--text);
+    cursor: pointer; white-space: nowrap;
+  }
+  .msg-actions button:active { background: var(--bg); }
+  .msg-actions .danger { color: var(--error); border-color: var(--error); }
+  .msg-list {
+    max-height: 480px; overflow-y: auto; -webkit-overflow-scrolling: touch;
+    scroll-behavior: smooth;
+  }
+  .msg-item {
+    padding: 10px 0; border-bottom: 1px solid var(--border);
+    font-size: 14px; line-height: 1.6; animation: msgIn .3s ease;
+  }
+  @keyframes msgIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  .msg-item:last-child { border-bottom: none; }
+  .msg-item-hdr {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 4px; font-size: 12px;
+  }
+  .msg-item-hdr input[type="checkbox"] { margin: 0; flex-shrink: 0; }
+  .msg-source {
+    display: inline-block; padding: 1px 6px; border-radius: 4px;
+    background: var(--accent); color: #fff; font-size: 11px; font-weight: 500;
+  }
+  .msg-time { color: var(--text2); font-size: 11px; }
+  .msg-del {
+    margin-left: auto; border: none; background: none; color: var(--text2);
+    font-size: 14px; cursor: pointer; padding: 2px 6px; border-radius: 4px;
+  }
+  .msg-del:active { background: var(--bg); color: var(--error); }
+  .msg-content { word-break: break-word; }
+  .msg-content h1, .msg-content h2, .msg-content h3,
+  .msg-content h4, .msg-content h5, .msg-content h6 { margin: 8px 0 4px; line-height: 1.4; }
+  .msg-content h1 { font-size: 1.3em; } .msg-content h2 { font-size: 1.15em; } .msg-content h3 { font-size: 1.05em; }
+  .msg-content p { margin: 4px 0; }
+  .msg-content pre {
+    background: var(--bg); border-radius: 8px; padding: 10px;
+    overflow-x: auto; font-size: 13px; margin: 8px 0;
+    border: 1px solid var(--border);
+  }
+  .msg-content code {
+    background: var(--bg); padding: 1px 4px; border-radius: 4px;
+    font-size: 0.9em; font-family: 'SF Mono', 'Fira Code', Consolas, monospace;
+  }
+  .msg-content pre code { background: none; padding: 0; border-radius: 0; font-size: inherit; }
+  .msg-content ul, .msg-content ol { margin: 4px 0; padding-left: 20px; }
+  .msg-content li { margin: 2px 0; }
+  .msg-content blockquote {
+    border-left: 3px solid var(--accent); padding: 4px 0 4px 12px;
+    margin: 8px 0; color: var(--text2);
+  }
+  .msg-content table { border-collapse: collapse; width: 100%; margin: 8px 0; font-size: 13px; }
+  .msg-content th, .msg-content td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; }
+  .msg-content th { background: var(--bg); font-weight: 600; }
+  .msg-content img { max-width: 100%; border-radius: 8px; }
+  .msg-content a { color: var(--accent); }
+  .msg-content hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+  .msg-empty { text-align: center; color: var(--text2); font-size: 13px; padding: 20px 0; }
+  .msg-reply-bar {
+    display: flex; gap: 8px; margin-top: 10px; padding-top: 10px;
+    border-top: 1px solid var(--border);
+  }
+  .msg-reply-btn {
+    flex: 1; padding: 10px; font-size: 14px; font-weight: 600;
+    border: 2px solid var(--accent); border-radius: 10px;
+    background: transparent; color: var(--accent);
+    cursor: pointer; transition: all .2s;
+  }
+  .msg-reply-btn:active { background: var(--accent); color: #fff; }
+  .msg-poll-status { font-size: 11px; color: var(--text2); text-align: right; margin-top: 4px; }
+  .msg-load-more {
+    text-align: center; padding: 12px 0;
+  }
+  .msg-load-more button {
+    font-size: 13px; padding: 8px 24px; border: 1.5px solid var(--accent);
+    border-radius: 10px; background: transparent; color: var(--accent);
+    cursor: pointer; font-weight: 500; transition: all .2s;
+  }
+  .msg-load-more button:active { background: var(--accent); color: #fff; }
+  .custom-text-wrap { margin-top: 10px; }
+  .custom-text-wrap textarea {
+    width: 100%; min-height: 56px; font-size: 14px; line-height: 1.5;
+    padding: 10px; border: 2px solid var(--border); border-radius: 10px;
+    background: var(--bg); color: var(--text); resize: vertical;
+    outline: none; transition: border-color .2s;
+    -webkit-appearance: none; appearance: none; margin-top: 8px;
+  }
+  .custom-text-wrap textarea:focus { border-color: var(--accent); }
+  .custom-text-wrap.is-hidden { display: none; }
 </style>
 </head>
 <body>
@@ -378,15 +507,17 @@
 
 <!-- Connection settings -->
 <div class="card">
-  <div class="conn-hdr">
-    <h3>连接设置</h3>
-    <span class="conn-badge" id="connBadge" title="连接状态">●</span>
+  <div class="section-hdr fold-hdr" data-fold="connBody" data-fold-key="connFold">
+    <h3>连接设置 <span class="conn-badge" id="connBadge" title="连接状态">●</span></h3>
+    <span class="fold-arrow">▾</span>
   </div>
-  <input class="conn-input" id="serverUrl" type="url"
-    placeholder="服务器地址（留空则使用当前）" autocomplete="off" spellcheck="false">
-  <input class="conn-input" id="token" type="password"
-    placeholder="Token（未设置则留空）" autocomplete="off">
-  <div class="conn-hint" id="connHint">当前连接：<span id="connAddr"></span></div>
+  <div class="fold-body" id="connBody">
+    <input class="conn-input" id="serverUrl" type="url"
+      placeholder="服务器地址（留空则使用当前）" autocomplete="off" spellcheck="false">
+    <input class="conn-input" id="token" type="password"
+      placeholder="Token（未设置则留空）" autocomplete="off">
+    <div class="conn-hint" id="connHint">当前连接：<span id="connAddr"></span></div>
+  </div>
 </div>
 
 <!-- Input -->
@@ -398,9 +529,43 @@
   <button class="send-btn" id="send">发送到电脑</button>
 </div>
 
+<!-- Messages -->
+<div class="card">
+  <div class="section-hdr fold-hdr" data-fold="msgBody" data-fold-key="msgFold">
+    <h3>消息接收 <span class="msg-badge" id="msgBadge"></span></h3>
+    <span class="fold-arrow">▾</span>
+  </div>
+  <div class="fold-body" id="msgBody">
+    <div class="msg-toolbar">
+      <input type="text" id="msgSearch" placeholder="搜索消息...">
+      <input type="date" id="msgDate">
+    </div>
+    <div class="msg-actions">
+      <button id="msgSelectAll">全选</button>
+      <button id="msgInvertSel">反选</button>
+      <button id="msgDelSel" class="danger">删除选中</button>
+      <button id="msgExportJson">导出 JSON</button>
+      <button id="msgExportCsv">导出 CSV</button>
+      <button id="msgExportMd">导出 MD</button>
+      <button id="msgClear" class="danger">清空</button>
+    </div>
+    <div class="msg-list" id="msgList">
+      <div class="msg-empty">暂无消息</div>
+    </div>
+    <div class="msg-reply-bar">
+      <button class="msg-reply-btn" id="msgReply">↑ 继续发送</button>
+    </div>
+    <div class="msg-poll-status" id="msgPollStatus"></div>
+  </div>
+</div>
+
 <!-- Settings -->
 <div class="card">
-  <div class="mode-title">发送模式</div>
+  <div class="section-hdr fold-hdr" data-fold="settingsBody" data-fold-key="settingsFold">
+    <h3>发送模式</h3>
+    <span class="fold-arrow">▾</span>
+  </div>
+  <div class="fold-body" id="settingsBody">
   <div class="mode-group">
     <input type="radio" name="mode" id="mode_copy" value="copy">
     <label for="mode_copy">仅复制</label>
@@ -460,6 +625,21 @@
       <input type="checkbox" id="restoreClip" checked>
       <span class="slider"></span>
     </label>
+  </div>
+
+  <div class="toggle-row">
+    <div class="toggle-label">
+      <span>附加文本</span>
+      <span class="hint">启用后，发送时自动将附加内容拼接到输入文本末尾</span>
+    </div>
+    <label class="switch">
+      <input type="checkbox" id="customTextEnabled">
+      <span class="slider"></span>
+    </label>
+  </div>
+  <div class="custom-text-wrap is-hidden" id="customTextWrap">
+    <textarea id="customText" placeholder="输入附加文本，发送时自动拼接到输入内容末尾…" autocomplete="off" spellcheck="false"></textarea>
+  </div>
   </div>
 </div>
 
@@ -537,6 +717,9 @@
       <input type="date" id="histDate">
     </div>
     <div class="hist-actions">
+      <button id="histSelectAll">全选</button>
+      <button id="histInvertSel">反选</button>
+      <button id="histDelSel" class="danger">删除选中</button>
       <button id="histExportJson">导出 JSON</button>
       <button id="histExportCsv">导出 CSV</button>
       <button id="histClear" class="danger">清空全部</button>
@@ -549,6 +732,7 @@
 
 </div><!-- /container -->
 
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
 <script>
 (function() {
   const $ = id => document.getElementById(id);
@@ -679,6 +863,18 @@
   restoreToggle(restoreClipEl, 'restoreClip', true);
   restoreToggle(histEnabledEl, 'historyEnabled', false);
 
+  const customTextEnabledEl = $('customTextEnabled');
+  restoreToggle(customTextEnabledEl, 'customTextEnabled', false);
+  customTextEnabledEl.addEventListener('change', () => {
+    LS_SET('customTextEnabled', customTextEnabledEl.checked ? '1' : '0');
+    $('customTextWrap').classList.toggle('is-hidden', !customTextEnabledEl.checked);
+    updateCharCount();
+  });
+  $('customTextWrap').classList.toggle('is-hidden', !customTextEnabledEl.checked);
+  const customTextEl = $('customText');
+  customTextEl.value = LS('customText') || '';
+  customTextEl.addEventListener('input', () => { LS_SET('customText', customTextEl.value); updateCharCount(); });
+
   autoSendEl.addEventListener('change', () => { LS_SET('autoSend', autoSendEl.checked ? '1' : '0'); updateDelayRow(); });
   autoClearEl.addEventListener('change', () => LS_SET('autoClear', autoClearEl.checked ? '1' : '0'));
   pressEnterEl.addEventListener('change', () => {
@@ -717,7 +913,17 @@
   // ===== Char count =====
   const textEl = $('text');
   const charCountEl = $('charCount');
-  textEl.addEventListener('input', () => { charCountEl.textContent = textEl.value.length; });
+  function updateCharCount() {
+    let len = textEl.value.length;
+    let extra = '';
+    if (customTextEnabledEl.checked) {
+      const cl = (customTextEl.value || '').trim().length;
+      if (cl > 0) extra = ' (+' + cl + ')';
+    }
+    charCountEl.textContent = len + extra;
+  }
+  textEl.addEventListener('input', updateCharCount);
+  updateCharCount();
 
   // ===== Auto-send debounce =====
   let autoSendTimer = null;
@@ -732,7 +938,11 @@
   let sending = false;
   async function doSend() {
     if (sending) return;
-    const text = textEl.value || '';
+    let text = textEl.value || '';
+    if (customTextEnabledEl.checked) {
+      const extra = (customTextEl.value || '').trim();
+      if (extra) text = text ? (text.trimEnd() + '\n\n' + extra) : extra;
+    }
     if (!text.trim()) { toast('请先输入内容', false); return; }
 
     const mode = document.querySelector('input[name="mode"]:checked');
@@ -773,14 +983,31 @@
     return h;
   }
 
+  // ===== Clipboard helper =====
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast('已复制', true);
+    } catch (e) {
+      const ta = document.createElement('textarea');
+      ta.value = text; ta.style.cssText = 'position:fixed;left:-9999px';
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand('copy'); toast('已复制', true); }
+      catch(ex) { toast('复制失败', false); }
+      document.body.removeChild(ta);
+    }
+  }
+
   // ===== History =====
   let allItems = [];
+  let histSelectedIds = new Set();
 
   async function loadHistory() {
     try {
       const res = await fetch(getBaseUrl() + '/history', { headers: authHeaders() });
       const j = await res.json();
       allItems = (j.items || []);
+      histSelectedIds.clear();
       renderHistory();
     } catch (e) { /* silent */ }
   }
@@ -811,8 +1038,11 @@
         hour: '2-digit', minute: '2-digit', second: '2-digit'
       });
       const preview = item.text.length > 100 ? item.text.slice(0, 100) + '...' : item.text;
+      const checked = histSelectedIds.has(item.id) ? ' checked' : '';
       return '<div class="history-item">' +
+        '<input type="checkbox" class="hi-check" data-id="' + item.id + '"' + checked + '>' +
         '<div class="hi-body"><span class="hi-time">' + t + '</span><br>' + escHtml(preview) + '</div>' +
+        '<button class="hi-copy" data-id="' + item.id + '" title="复制">复制</button>' +
         '<button class="hi-del" data-id="' + item.id + '" title="删除">&#x2715;</button>' +
         '</div>';
     }).join('');
@@ -827,15 +1057,64 @@
   $('histSearch').addEventListener('input', renderHistory);
   $('histDate').addEventListener('change', renderHistory);
 
-  // Delete single item
+  // History checkbox
+  $('historyList').addEventListener('change', e => {
+    if (e.target.classList.contains('hi-check')) {
+      const id = parseInt(e.target.dataset.id);
+      if (e.target.checked) histSelectedIds.add(id); else histSelectedIds.delete(id);
+    }
+  });
+
+  // History click: copy or delete
   $('historyList').addEventListener('click', async (e) => {
+    const copyBtn = e.target.closest('.hi-copy');
+    if (copyBtn) {
+      const id = parseInt(copyBtn.dataset.id);
+      const item = allItems.find(i => i.id === id);
+      if (item) copyText(item.text);
+      return;
+    }
     const btn = e.target.closest('.hi-del');
     if (!btn) return;
     const id = btn.getAttribute('data-id');
     try {
       await fetch(getBaseUrl() + '/history/' + id, { method: 'DELETE', headers: authHeaders() });
       allItems = allItems.filter(i => String(i.id) !== String(id));
+      histSelectedIds.delete(parseInt(id));
       renderHistory();
+    } catch (ex) { toast('删除失败', false); }
+  });
+
+  // History select all
+  $('histSelectAll').addEventListener('click', () => {
+    $('historyList').querySelectorAll('.hi-check').forEach(c => {
+      c.checked = true; histSelectedIds.add(parseInt(c.dataset.id));
+    });
+  });
+
+  // History invert selection
+  $('histInvertSel').addEventListener('click', () => {
+    $('historyList').querySelectorAll('.hi-check').forEach(c => {
+      c.checked = !c.checked;
+      const id = parseInt(c.dataset.id);
+      if (c.checked) histSelectedIds.add(id); else histSelectedIds.delete(id);
+    });
+  });
+
+  // History delete selected
+  $('histDelSel').addEventListener('click', async () => {
+    if (histSelectedIds.size === 0) { toast('请先选择记录', false); return; }
+    if (!confirm('确定删除选中的 ' + histSelectedIds.size + ' 条记录？')) return;
+    try {
+      await fetch(getBaseUrl() + '/history', {
+        method: 'DELETE',
+        headers: Object.assign({'Content-Type': 'application/json'}, authHeaders()),
+        body: JSON.stringify({ ids: Array.from(histSelectedIds) })
+      });
+      allItems = allItems.filter(i => !histSelectedIds.has(i.id));
+      histSelectedIds.clear();
+      renderHistory();
+      toast('已删除', true);
     } catch (ex) { toast('删除失败', false); }
   });
 
@@ -844,7 +1123,7 @@
     if (!confirm('确定清空全部历史记录？')) return;
     try {
       await fetch(getBaseUrl() + '/history', { method: 'DELETE', headers: authHeaders() });
-      allItems = [];
+      allItems = []; histSelectedIds.clear();
       renderHistory();
       toast('已清空', true);
     } catch (ex) { toast('清空失败', false); }
@@ -952,6 +1231,263 @@
     if (e.key === 'Enter') { e.preventDefault(); const k = $('customKey').value.trim(); if (k) sendKey(k); }
   });
   renderModifiers();
+
+  // ===== Fold / Collapse =====
+  document.querySelectorAll('.fold-hdr').forEach(hdr => {
+    const targetId = hdr.dataset.fold;
+    const key = hdr.dataset.foldKey;
+    const body = $(targetId);
+    const arrow = hdr.querySelector('.fold-arrow');
+    if (!body) return;
+    const saved = LS(key);
+    if (saved === '1') {
+      body.classList.add('is-collapsed');
+      if (arrow) arrow.classList.add('is-collapsed');
+    }
+    hdr.addEventListener('click', () => {
+      const collapsed = body.classList.toggle('is-collapsed');
+      if (arrow) arrow.classList.toggle('is-collapsed', collapsed);
+      LS_SET(key, collapsed ? '1' : '0');
+    });
+  });
+
+  // ===== Message Panel =====
+  if (typeof marked !== 'undefined') {
+    marked.setOptions({ breaks: true, gfm: true });
+  }
+
+  let allMessages = [];
+  let msgSelectedIds = new Set();
+  let lastMsgId = 0;
+  let msgPollTimer = null;
+  const MSG_PAGE_SIZE = 20;
+  let msgDisplayCount = MSG_PAGE_SIZE;
+  let msgPollCount = 0;
+
+  function renderMarkdown(text) {
+    if (typeof marked !== 'undefined') {
+      try { return marked.parse(text || ''); } catch(e) {}
+    }
+    return '<p>' + escHtml(text || '') + '</p>';
+  }
+
+  async function loadMessages(sinceId) {
+    try {
+      const url = getBaseUrl() + '/messages' + (sinceId ? '?since=' + sinceId : '');
+      const res = await fetch(url, { headers: authHeaders() });
+      const j = await res.json();
+      return j.items || [];
+    } catch (e) { return []; }
+  }
+
+  async function fullLoadMessages() {
+    allMessages = await loadMessages(0);
+    if (allMessages.length > 0) {
+      lastMsgId = Math.max(...allMessages.map(m => m.id));
+    }
+    msgSelectedIds.clear();
+    renderMessages();
+  }
+
+  async function pollMessages() {
+    msgPollCount++;
+    // Periodic full refresh to handle server restart / data sync
+    if (msgPollCount % 10 === 0) {
+      await fullLoadMessages();
+      $('msgPollStatus').textContent = '同步: ' + new Date().toLocaleTimeString('zh-CN');
+      return;
+    }
+    const newItems = await loadMessages(lastMsgId);
+    if (newItems.length > 0) {
+      allMessages = allMessages.concat(newItems);
+      lastMsgId = Math.max(lastMsgId, ...newItems.map(m => m.id));
+      renderMessages();
+      const badge = $('msgBadge');
+      badge.textContent = newItems.length;
+      // Newest at top, scroll to top to see new messages
+      $('msgList').scrollTop = 0;
+    }
+    $('msgPollStatus').textContent = '刷新: ' + new Date().toLocaleTimeString('zh-CN');
+  }
+
+  function renderMessages() {
+    const list = $('msgList');
+    let items = allMessages.slice();
+    const q = ($('msgSearch').value || '').trim().toLowerCase();
+    if (q) items = items.filter(m => (m.content || '').toLowerCase().includes(q));
+    const d = $('msgDate').value;
+    if (d) {
+      const dayStart = new Date(d).getTime();
+      const dayEnd = dayStart + 86400000;
+      items = items.filter(m => m.timestamp >= dayStart && m.timestamp < dayEnd);
+    }
+    // Newest first
+    items.sort((a, b) => b.id - a.id);
+    const total = items.length;
+    const isFiltering = q || d;
+    // Pagination (only when not searching/filtering)
+    if (!isFiltering && total > msgDisplayCount) {
+      items = items.slice(0, msgDisplayCount);
+    }
+    if (items.length === 0) {
+      list.innerHTML = '<div class="msg-empty">暂无消息</div>';
+      return;
+    }
+    let html = items.map(m => {
+      const t = new Date(m.timestamp).toLocaleString('zh-CN', {
+        month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit'
+      });
+      const checked = msgSelectedIds.has(m.id) ? ' checked' : '';
+      const rendered = renderMarkdown(m.content);
+      return '<div class="msg-item" data-id="' + m.id + '">' +
+        '<div class="msg-item-hdr">' +
+          '<input type="checkbox" class="msg-check" data-id="' + m.id + '"' + checked + '>' +
+          '<span class="msg-source">' + escHtml(m.source || 'api') + '</span>' +
+          '<span class="msg-time">' + t + '</span>' +
+          '<button class="msg-copy" data-id="' + m.id + '" title="复制">复制</button>' +
+          '<button class="msg-del" data-id="' + m.id + '" title="删除">&#x2715;</button>' +
+        '</div>' +
+        '<div class="msg-content">' + rendered + '</div>' +
+      '</div>';
+    }).join('');
+    if (!isFiltering && total > items.length) {
+      html += '<div class="msg-load-more"><button id="msgLoadMore">加载更多（剩余 ' + (total - items.length) + ' 条）</button></div>';
+    }
+    list.innerHTML = html;
+  }
+
+  function startMsgPolling() {
+    if (msgPollTimer) clearInterval(msgPollTimer);
+    msgPollTimer = setInterval(() => {
+      if (!document.hidden) pollMessages();
+    }, 3000);
+  }
+
+  $('msgSearch').addEventListener('input', () => { msgDisplayCount = MSG_PAGE_SIZE; renderMessages(); });
+  $('msgDate').addEventListener('change', () => { msgDisplayCount = MSG_PAGE_SIZE; renderMessages(); });
+
+  // Load more messages
+  $('msgList').addEventListener('click', e => {
+    if (e.target.id === 'msgLoadMore' || e.target.closest('#msgLoadMore')) {
+      msgDisplayCount += MSG_PAGE_SIZE;
+      renderMessages();
+    }
+  });
+
+  // Checkbox
+  $('msgList').addEventListener('change', e => {
+    if (e.target.classList.contains('msg-check')) {
+      const id = parseInt(e.target.dataset.id);
+      if (e.target.checked) msgSelectedIds.add(id); else msgSelectedIds.delete(id);
+    }
+  });
+
+  // Copy / Delete single message
+  $('msgList').addEventListener('click', async e => {
+    const copyBtn = e.target.closest('.msg-copy');
+    if (copyBtn) {
+      const id = parseInt(copyBtn.dataset.id);
+      const m = allMessages.find(x => x.id === id);
+      if (m) copyText(m.content);
+      return;
+    }
+    const btn = e.target.closest('.msg-del');
+    if (!btn) return;
+    const id = parseInt(btn.dataset.id);
+    try {
+      await fetch(getBaseUrl() + '/messages/' + id, { method: 'DELETE', headers: authHeaders() });
+      allMessages = allMessages.filter(m => m.id !== id);
+      msgSelectedIds.delete(id);
+      renderMessages();
+    } catch (ex) { toast('删除失败', false); }
+  });
+
+  // Select all
+  $('msgSelectAll').addEventListener('click', () => {
+    $('msgList').querySelectorAll('.msg-check').forEach(c => {
+      c.checked = true; msgSelectedIds.add(parseInt(c.dataset.id));
+    });
+  });
+
+  // Invert selection
+  $('msgInvertSel').addEventListener('click', () => {
+    $('msgList').querySelectorAll('.msg-check').forEach(c => {
+      c.checked = !c.checked;
+      const id = parseInt(c.dataset.id);
+      if (c.checked) msgSelectedIds.add(id); else msgSelectedIds.delete(id);
+    });
+  });
+
+  // Delete selected
+  $('msgDelSel').addEventListener('click', async () => {
+    if (msgSelectedIds.size === 0) { toast('请先选择消息', false); return; }
+    if (!confirm('确定删除选中的 ' + msgSelectedIds.size + ' 条消息？')) return;
+    try {
+      await fetch(getBaseUrl() + '/messages', {
+        method: 'DELETE',
+        headers: Object.assign({'Content-Type': 'application/json'}, authHeaders()),
+        body: JSON.stringify({ ids: Array.from(msgSelectedIds) })
+      });
+      allMessages = allMessages.filter(m => !msgSelectedIds.has(m.id));
+      msgSelectedIds.clear();
+      renderMessages();
+      toast('已删除', true);
+    } catch (ex) { toast('删除失败', false); }
+  });
+
+  // Clear all
+  $('msgClear').addEventListener('click', async () => {
+    if (!confirm('确定清空全部消息？')) return;
+    try {
+      await fetch(getBaseUrl() + '/messages', { method: 'DELETE', headers: authHeaders() });
+      allMessages = []; msgSelectedIds.clear(); lastMsgId = 0;
+      renderMessages();
+      toast('已清空', true);
+    } catch (ex) { toast('清空失败', false); }
+  });
+
+  // Export
+  async function doMsgExport(fmt) {
+    try {
+      const res = await fetch(getBaseUrl() + '/messages/export?format=' + fmt, { headers: authHeaders() });
+      if (!res.ok) { toast('导出失败: ' + res.status, false); return; }
+      const blob = await res.blob();
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+      a.download = 'messages.' + fmt; a.click(); URL.revokeObjectURL(a.href);
+    } catch (e) { toast('导出失败', false); }
+  }
+  $('msgExportJson').addEventListener('click', () => doMsgExport('json'));
+  $('msgExportCsv').addEventListener('click', () => doMsgExport('csv'));
+
+  // Export Markdown
+  $('msgExportMd').addEventListener('click', () => {
+    if (allMessages.length === 0) { toast('暂无消息', false); return; }
+    let md = '';
+    allMessages.forEach(m => {
+      const t = new Date(m.timestamp).toLocaleString('zh-CN');
+      md += '## [' + (m.source || 'api') + '] ' + t + '\n\n' + (m.content || '') + '\n\n---\n\n';
+    });
+    const blob = new Blob([md], { type: 'text/markdown;charset=utf-8' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = 'messages.md'; a.click(); URL.revokeObjectURL(a.href);
+  });
+
+  // Reply - scroll to input
+  $('msgReply').addEventListener('click', () => {
+    textEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => textEl.focus(), 350);
+  });
+
+  // Clear badge on scroll
+  $('msgList').addEventListener('scroll', () => { $('msgBadge').textContent = ''; });
+
+  // After send, auto-scroll message panel into view
+  const origDoSend = doSend;
+  // (doSend already defined; we hook after it via send button)
+
+  // Init
+  fullLoadMessages();
+  startMsgPolling();
 
   // Auto-focus
   setTimeout(() => textEl.focus(), 300);
