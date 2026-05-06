@@ -327,6 +327,12 @@
   .conn-input:focus { border-color: var(--accent); }
   .conn-input:last-child { margin-bottom: 0; }
   .conn-hint { font-size: 11px; color: var(--text2); margin-top: 4px; line-height: 1.4; }
+  .input-hint { font-size: 11px; color: var(--text2); margin-top: 6px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .input-hint-badge { cursor: pointer; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-family: monospace; user-select: none; }
+  .input-hint-badge.is-command { background: #d4edda; color: #28a745; }
+  .input-hint-badge.is-shell { background: #fff3cd; color: #e68900; }
+  [data-theme=dark] .input-hint-badge.is-command { background: #1a3d27; color: #57e078; }
+  [data-theme=dark] .input-hint-badge.is-shell { background: #3d2e00; color: #ffb84d; }
 
   /* PWA install banner */
   .install-banner {
@@ -574,6 +580,11 @@
     <div class="char-count" id="charCount">0</div>
   </div>
   <button class="send-btn" id="send">发送到电脑</button>
+  <div class="input-hint" id="inputHint" style="display:none">
+    <span>前缀：</span>
+    <span class="input-hint-badge is-command" id="hintCommand" title="点击填充命令前缀"></span>
+    <span class="input-hint-badge is-shell" id="hintShell" title="点击填充 Shell 前缀"></span>
+  </div>
 </div>
 
 <!-- Messages -->
@@ -861,8 +872,22 @@
         _serverCaps.shell_enabled = !!j.shell_enabled;
         _serverCaps.shell_prefix = j.shell_prefix || ':';
         _serverCaps.command_prefix = j.command_prefix || '/';
+        _initInputHint();
       }
     } catch (e) { /* silent */ }
+  }
+
+  function _initInputHint() {
+    const cp = _serverCaps.command_prefix, sp = _serverCaps.shell_prefix;
+    const hintEl = $('inputHint');
+    const hintCmd = $('hintCommand');
+    const hintShell = $('hintShell');
+    hintCmd.textContent = cp + ' 命令';
+    hintShell.textContent = sp + ' Shell';
+    if (!_serverCaps.shell_enabled) hintShell.style.display = 'none';
+    hintEl.style.display = 'flex';
+    hintCmd.onclick = () => { if (!textEl.value.startsWith(cp)) textEl.value = cp + textEl.value; textEl.focus(); updateSendBtn(); };
+    hintShell.onclick = () => { if (!textEl.value.startsWith(sp)) textEl.value = sp + textEl.value; textEl.focus(); updateSendBtn(); };
   }
 
   // ===== Server URL & Token =====

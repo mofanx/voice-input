@@ -2,7 +2,10 @@
 
 import os
 import secrets
+import shutil
+import sys
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import List, Optional
 
 
@@ -113,9 +116,107 @@ def _coerce(key: str, val):
     return val
 
 
+APP_NAME = "voice-input"
+
+
+def _real_home() -> Path:
+    """返回真实用户的 home 目录，sudo 时使用 SUDO_USER 而非 root"""
+    sudo_user = os.environ.get("SUDO_USER")
+    if sudo_user and os.getuid() == 0:
+        import pwd
+        try:
+            return Path(pwd.getpwnam(sudo_user).pw_dir)
+        except KeyError:
+            pass
+    return Path.home()
+
+
+def get_user_config_dir() -> Path:
+    """返回跨平台的用户配置目录，sudo 运行时指向原始用户目录而非 root"""
+    home = _real_home()
+    if sys.platform == "win32":
+        base = Path(os.environ.get("APPDATA", home / "AppData" / "Roaming"))
+    elif sys.platform == "darwin":
+        base = home / "Library" / "Application Support"
+    else:
+        xdg = os.environ.get("XDG_CONFIG_HOME", "")
+        # sudo 时 XDG_CONFIG_HOME 可能指向 root，忽略它
+        if xdg and not (os.getuid() == 0 and os.environ.get("SUDO_USER")):
+            base = Path(xdg)
+        else:
+            base = home / ".config"
+    return base / APP_NAME
+
+
+def find_config_file(explicit: Optional[str] = None) -> Optional[str]:
+    """按优先级查找配置文件，返回找到的路径或 None"""
+    # 1. CLI 显式指定
+    if explicit:
+        return explicit
+    # 2. 环境变量
+    env_cfg = os.environ.get("VOICE_INPUT_CONFIG")
+    if env_cfg:
+        return env_cfg
+    # 3. 当前工作目录
+    cwd_cfg = Path.cwd() / "config.yaml"
+    if cwd_cfg.exists():
+        return str(cwd_cfg)
+    # 4. 用户配置目录
+    user_cfg = get_user_config_dir() / "config.yaml"
+    if user_cfg.exists():
+        return str(user_cfg)
+    return None
+
+
+def init_user_config() -> Path:
+    """首次运行时在用户配置目录生成默认配置和命令文件，返回配置目录路径"""
+    config_dir = get_user_config_dir()
+    config_dir.mkdir(parents=True, exist_ok=True)
+
+    config_file = config_dir / "config.yaml"
+    commands_file = config_dir / "commands.yaml"
+
+    # 找 example 文件（与本模块同级的上级目录）
+    pkg_dir = Path(__file__).parent.parent
+    config_example = pkg_dir / "config.example.yaml"
+    commands_example = pkg_dir / "commands.example.yaml"
+
+    if not config_file.exists():
+        if config_example.exists():
+            shutil.copy(config_example, config_file)
+        else:
+            config_file.write_text(
+                f"# voice-input 配置文件\n# 完整说明见: https://github.com/mofanx/voice-input\n\n"
+                f"command_file: {commands_file}\n",
+                encoding="utf-8",
+            )
+        # 将 command_file 改写为绝对路径，避免工作目录变化后找不到
+        try:
+            import yaml
+            raw = yaml.safe_load(config_file.read_text(encoding="utf-8")) or {}
+            cf = raw.get("command_file", "")
+            if cf and not Path(cf).is_absolute():
+                raw["command_file"] = str(config_dir / cf)
+                config_file.write_text(
+                    yaml.dump(raw, allow_unicode=True, default_flow_style=False),
+                    encoding="utf-8",
+                )
+        except Exception:
+            pass
+        print(f"[voice-input] 已创建默认配置: {config_file}")
+
+    if not commands_file.exists():
+        if commands_example.exists():
+            shutil.copy(commands_example, commands_file)
+            print(f"[voice-input] 已创建默认命令文件: {commands_file}")
+
+    return config_dir
+
+
 def build_config(
     cli_args: Optional[dict] = None,
     config_file: Optional[str] = None,
+    config_dir: Optional[Path] = None,
 ) -> AppConfig:
     """三级合并构建最终配置"""
     merged: dict = {}
@@ -132,6 +233,12 @@ def build_config(
         for k, v in cli_args.items():
             if v is not None:
                 merged[k] = v
+
+    # command_file 为空时，自动指向用户配置目录的 commands.yaml
+    if not merged.get("command_file") and config_dir:
+        candidate = config_dir / "commands.yaml"
+        if candidate.exists():
+            merged["command_file"] = str(candidate)
 
     # 类型转换
     coerced = {k: _coerce(k, v) for k, v in merged.items()}

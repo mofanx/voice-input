@@ -6,7 +6,7 @@ import platform
 import sys
 
 from . import __version__
-from .config import build_config
+from .config import build_config, find_config_file, init_user_config
 from .utils import get_local_ip
 
 
@@ -90,8 +90,23 @@ def main(argv=None):
     if args.log_level is not None:
         cli_dict["log_level"] = args.log_level
 
+    # 查找配置文件：CLI 指定 > 环境变量 > 当前目录 > 用户配置目录
+    config_path = find_config_file(args.config)
+    config_dir = None
+    if config_path is None:
+        # 首次运行，自动生成用户配置
+        config_dir = init_user_config()
+        config_path = str(config_dir / "config.yaml")
+    else:
+        from pathlib import Path
+        _p = Path(config_path)
+        # 若配置文件在用户配置目录，传入 config_dir 以便自动定位 commands.yaml
+        from .config import get_user_config_dir
+        if _p.parent == get_user_config_dir():
+            config_dir = _p.parent
+
     # 构建配置
-    cfg = build_config(cli_args=cli_dict, config_file=args.config)
+    cfg = build_config(cli_args=cli_dict, config_file=config_path, config_dir=config_dir)
 
     # 配置日志
     logging.basicConfig(

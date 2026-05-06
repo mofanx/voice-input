@@ -312,6 +312,26 @@ def create_app(config: AppConfig) -> Flask:
     app.voice_messages_counter = 0
     app.command_engine = CommandEngine.from_config(config, key_executor=lambda key: _do_key_press(key))
 
+    def _push_exec_message(title: str, output: str, error: str, source: str):
+        """将命令执行结果推送到消息面板，有输出或错误时才推送"""
+        parts = []
+        if output:
+            parts.append(output)
+        if error:
+            parts.append(f"[错误] {error}")
+        if not parts:
+            return
+        content = f"▶ {title}\n" + "\n".join(parts)
+        with app.voice_messages_lock:
+            app.voice_messages_counter += 1
+            app.voice_messages.append({
+                "id": app.voice_messages_counter,
+                "content": content,
+                "source": source,
+                "timestamp": int(time.time() * 1000),
+                "client_ip": "localhost",
+            })
+
     # 预热 keyboard / pyclip，强制完成底层设备初始化
     # keyboard 在 Linux 上首次按键时才创建 /dev/uinput 虚拟设备，
     # 内核注册该设备需要数百毫秒，期间发送的按键事件会丢失。
@@ -586,9 +606,11 @@ def create_app(config: AppConfig) -> Flask:
             if shell_res.error:
                 payload["code"] = 500
                 payload["message"] = "Shell execution failed"
+                _push_exec_message(_shell_cmd, "", shell_res.error, "shell")
                 return jsonify(payload), 500
             payload["code"] = 200
             payload["message"] = "success"
+            _push_exec_message(_shell_cmd, shell_res.output, "", "shell")
             with app.voice_history_lock:
                 app.voice_history_counter += 1
                 app.voice_history.appendleft({
@@ -617,6 +639,10 @@ def create_app(config: AppConfig) -> Flask:
                 payload["message"] = "Command requires confirmation"
                 return jsonify(payload), 202
             if result.error:
+                _push_exec_message(
+                    payload.get("command_name") or payload.get("command_id") or _command_text,
+                    "", result.error, "command"
+                )
                 return jsonify(payload), 500
             if not result.matched:
                 return jsonify({
@@ -639,6 +665,10 @@ def create_app(config: AppConfig) -> Flask:
                         "command_id": payload.get("command_id"),
                     }
                 )
+            _push_exec_message(
+                payload.get("command_name") or payload.get("command_id") or _command_text,
+                result.output, "", "command"
+            )
             return jsonify(payload)
 
         # 7. 执行剪贴板和键盘操作

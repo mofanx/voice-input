@@ -577,7 +577,21 @@ def expand_command(command: List[str]) -> List[str]:
 def run_process(command: List[str]) -> str:
     if not command or not command[0]:
         raise ValueError("Empty command")
-    completed = subprocess.run(command, timeout=15, capture_output=True, text=True)
+    env = _get_desktop_env()
+    sudo_user = os.environ.get("SUDO_USER")
+    if os.getuid() == 0 and sudo_user:
+        uid_result = subprocess.run(["id", "-u", sudo_user], capture_output=True, text=True)
+        real_uid = uid_result.stdout.strip()
+        env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path=/run/user/{real_uid}/bus"
+        env["XDG_RUNTIME_DIR"] = f"/run/user/{real_uid}"
+        cmd_str = subprocess.list2cmdline(command)
+        actual = ["sudo", "-u", sudo_user, "-H", "sh", "-c",
+                  f"DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{real_uid}/bus "
+                  f"XDG_RUNTIME_DIR=/run/user/{real_uid} "
+                  f"WAYLAND_DISPLAY=wayland-0 {cmd_str}"]
+        completed = subprocess.run(actual, timeout=15, capture_output=True, text=True, env=env)
+    else:
+        completed = subprocess.run(command, timeout=15, capture_output=True, text=True, env=env)
     output = (completed.stdout or "") + (completed.stderr or "")
     if completed.returncode != 0:
         raise RuntimeError(output.strip() or f"Command failed: {completed.returncode}")
