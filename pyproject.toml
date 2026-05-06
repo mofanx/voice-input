@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "voice-input"
-version = "1.2.1"
+version = "2.1.0"
 description = "跨设备语音输入传输系统 - 将手机端语音识别文本传送到电脑"
 readme = "README.md"
 license = {text = "MIT"}

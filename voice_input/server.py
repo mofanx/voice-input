@@ -21,6 +21,7 @@ from .commands import (
     exec_shell_command, shell_result_to_dict, strip_shell_prefix,
 )
 from .config import AppConfig
+from .storage import HistoryStore, MessageStore
 from .utils import get_local_ip, get_client_ip, is_ip_allowed, is_token_valid
 
 
@@ -303,13 +304,9 @@ def create_app(config: AppConfig) -> Flask:
 
     # 存储配置到 app 上下文
     app.voice_config = config
-    app.voice_history = deque(maxlen=config.history_size)
-    app.voice_history_lock = threading.Lock()
-    app.voice_history_counter = 0
-
-    app.voice_messages = deque(maxlen=config.history_size)
-    app.voice_messages_lock = threading.Lock()
-    app.voice_messages_counter = 0
+    _db = config.db_path or ":memory:"
+    app.history_store = HistoryStore(_db, maxlen=config.history_size)
+    app.message_store = MessageStore(_db, maxlen=config.history_size)
     app.command_engine = CommandEngine.from_config(config, key_executor=lambda key: _do_key_press(key))
 
     def _push_exec_message(title: str, output: str, error: str, source: str):
@@ -322,15 +319,12 @@ def create_app(config: AppConfig) -> Flask:
         if not parts:
             return
         content = f"▶ {title}\n" + "\n".join(parts)
-        with app.voice_messages_lock:
-            app.voice_messages_counter += 1
-            app.voice_messages.append({
-                "id": app.voice_messages_counter,
-                "content": content,
-                "source": source,
-                "timestamp": int(time.time() * 1000),
-                "client_ip": "localhost",
-            })
+        app.message_store.append({
+            "content": content,
+            "source": source,
+            "timestamp": int(time.time() * 1000),
+            "client_ip": "localhost",
+        })
 
     # 预热 keyboard / pyclip，强制完成底层设备初始化
     # keyboard 在 Linux 上首次按键时才创建 /dev/uinput 虚拟设备，
@@ -423,13 +417,15 @@ def create_app(config: AppConfig) -> Flask:
         auth_err = _check_auth()
         if auth_err:
             return auth_err
-        with app.voice_history_lock:
-            items = list(app.voice_history)
+        before_id = request.args.get("before_id", 0, type=int)
+        limit = request.args.get("limit", 20, type=int)
+        result = app.history_store.list(before_id=before_id, limit=limit)
         return jsonify(
             {
                 "code": 200,
                 "message": "success",
-                "items": items,
+                "items": result["items"],
+                "has_more": result["has_more"],
                 "timestamp": int(time.time() * 1000),
             }
         )
@@ -439,13 +435,7 @@ def create_app(config: AppConfig) -> Flask:
         auth_err = _check_auth()
         if auth_err:
             return auth_err
-        with app.voice_history_lock:
-            before = len(app.voice_history)
-            app.voice_history = deque(
-                (item for item in app.voice_history if item.get("id") != item_id),
-                maxlen=config.history_size,
-            )
-            removed = before - len(app.voice_history)
+        removed = app.history_store.delete(item_id)
         return jsonify({"code": 200, "message": "success", "removed": removed})
 
     @app.route("/history", methods=["DELETE"])
@@ -455,18 +445,10 @@ def create_app(config: AppConfig) -> Flask:
             return auth_err
         data = request.get_json(silent=True) or {}
         ids = data.get("ids", [])
-        with app.voice_history_lock:
-            if ids:
-                id_set = set(ids)
-                before = len(app.voice_history)
-                app.voice_history = deque(
-                    (item for item in app.voice_history if item.get("id") not in id_set),
-                    maxlen=config.history_size,
-                )
-                removed = before - len(app.voice_history)
-            else:
-                removed = len(app.voice_history)
-                app.voice_history.clear()
+        if ids:
+            removed = app.history_store.delete_many(ids)
+        else:
+            removed = app.history_store.clear()
         return jsonify({"code": 200, "message": "success", "cleared": removed, "removed": removed})
 
     @app.route("/history/export", methods=["GET"])
@@ -475,8 +457,7 @@ def create_app(config: AppConfig) -> Flask:
         if auth_err:
             return auth_err
         fmt = request.args.get("format", "json")
-        with app.voice_history_lock:
-            items = list(app.voice_history)
+        items = app.history_store.list(limit=0)["items"]  # 导出全量
 
         if fmt == "csv":
             output = io.StringIO()
@@ -611,17 +592,14 @@ def create_app(config: AppConfig) -> Flask:
             payload["code"] = 200
             payload["message"] = "success"
             _push_exec_message(_shell_cmd, shell_res.output, "", "shell")
-            with app.voice_history_lock:
-                app.voice_history_counter += 1
-                app.voice_history.appendleft({
-                    "id": app.voice_history_counter,
-                    "server_time": current_time,
-                    "client_ip": client_ip,
-                    "device_id": device_id,
-                    "action": "shell",
-                    "text": text,
-                    "command_id": None,
-                })
+            app.history_store.append({
+                "server_time": current_time,
+                "client_ip": client_ip,
+                "device_id": device_id,
+                "action": "shell",
+                "text": text,
+                "command_id": None,
+            })
             return jsonify(payload)
 
         if _run_command:
@@ -652,19 +630,14 @@ def create_app(config: AppConfig) -> Flask:
                     "action": "command",
                     "device_id": device_id,
                 }), 404
-            with app.voice_history_lock:
-                app.voice_history_counter += 1
-                app.voice_history.appendleft(
-                    {
-                        "id": app.voice_history_counter,
-                        "server_time": current_time,
-                        "client_ip": client_ip,
-                        "device_id": device_id,
-                        "action": "command",
-                        "text": text,
-                        "command_id": payload.get("command_id"),
-                    }
-                )
+            app.history_store.append({
+                "server_time": current_time,
+                "client_ip": client_ip,
+                "device_id": device_id,
+                "action": "command",
+                "text": text,
+                "command_id": payload.get("command_id"),
+            })
             _push_exec_message(
                 payload.get("command_name") or payload.get("command_id") or _command_text,
                 result.output, "", "command"
@@ -681,18 +654,13 @@ def create_app(config: AppConfig) -> Flask:
 
             pyclip.copy(text)
 
-            with app.voice_history_lock:
-                app.voice_history_counter += 1
-                app.voice_history.appendleft(
-                    {
-                        "id": app.voice_history_counter,
-                        "server_time": current_time,
-                        "client_ip": client_ip,
-                        "device_id": device_id,
-                        "action": action,
-                        "text": text,
-                    }
-                )
+            app.history_store.append({
+                "server_time": current_time,
+                "client_ip": client_ip,
+                "device_id": device_id,
+                "action": action,
+                "text": text,
+            })
 
             logging.info(
                 f"已复制到剪贴板 (长度: {len(text)}, 设备: {device_id}, "
@@ -1067,22 +1035,15 @@ self.addEventListener('fetch', e => {
         source = str(data.get("source", "api")).strip() or "api"
         current_time = int(time.time() * 1000)
 
-        with app.voice_messages_lock:
-            app.voice_messages_counter += 1
-            msg = {
-                "id": app.voice_messages_counter,
-                "content": content,
-                "source": source,
-                "timestamp": current_time,
-                "client_ip": get_client_ip(request),
-            }
-            app.voice_messages.append(msg)
-
-        logging.info(
-            f"收到消息 (id={msg['id']}, source={source}, len={len(content)})"
-        )
+        msg_id = app.message_store.append({
+            "content": content,
+            "source": source,
+            "timestamp": current_time,
+            "client_ip": get_client_ip(request),
+        })
+        logging.info(f"收到消息 (id={msg_id}, source={source}, len={len(content)})")
         return jsonify(
-            {"code": 200, "message": "success", "id": msg["id"], "timestamp": current_time}
+            {"code": 200, "message": "success", "id": msg_id, "timestamp": current_time}
         )
 
     @app.route("/messages", methods=["GET"])
@@ -1091,15 +1052,15 @@ self.addEventListener('fetch', e => {
         if auth_err:
             return auth_err
         since_id = request.args.get("since", 0, type=int)
-        with app.voice_messages_lock:
-            items = list(app.voice_messages)
-        if since_id:
-            items = [m for m in items if m["id"] > since_id]
+        before_id = request.args.get("before_id", 0, type=int)
+        limit = request.args.get("limit", 50, type=int)
+        result = app.message_store.list(since_id=since_id, before_id=before_id, limit=limit)
         return jsonify(
             {
                 "code": 200,
                 "message": "success",
-                "items": items,
+                "items": result["items"],
+                "has_more": result["has_more"],
                 "timestamp": int(time.time() * 1000),
             }
         )
@@ -1109,13 +1070,7 @@ self.addEventListener('fetch', e => {
         auth_err = _check_auth()
         if auth_err:
             return auth_err
-        with app.voice_messages_lock:
-            before = len(app.voice_messages)
-            app.voice_messages = deque(
-                (m for m in app.voice_messages if m["id"] != msg_id),
-                maxlen=config.history_size,
-            )
-            removed = before - len(app.voice_messages)
+        removed = app.message_store.delete(msg_id)
         return jsonify({"code": 200, "message": "success", "removed": removed})
 
     @app.route("/messages", methods=["DELETE"])
@@ -1125,18 +1080,10 @@ self.addEventListener('fetch', e => {
             return auth_err
         data = request.get_json(silent=True) or {}
         ids = data.get("ids", [])
-        with app.voice_messages_lock:
-            if ids:
-                id_set = set(ids)
-                before = len(app.voice_messages)
-                app.voice_messages = deque(
-                    (m for m in app.voice_messages if m["id"] not in id_set),
-                    maxlen=config.history_size,
-                )
-                removed = before - len(app.voice_messages)
-            else:
-                removed = len(app.voice_messages)
-                app.voice_messages.clear()
+        if ids:
+            removed = app.message_store.delete_many(ids)
+        else:
+            removed = app.message_store.clear()
         return jsonify({"code": 200, "message": "success", "removed": removed})
 
     @app.route("/messages/export", methods=["GET"])
@@ -1145,8 +1092,7 @@ self.addEventListener('fetch', e => {
         if auth_err:
             return auth_err
         fmt = request.args.get("format", "json")
-        with app.voice_messages_lock:
-            items = list(app.voice_messages)
+        items = app.message_store.list()
         if fmt == "csv":
             output = io.StringIO()
             writer = csv.writer(output)

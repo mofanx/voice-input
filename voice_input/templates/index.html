@@ -231,29 +231,40 @@
   .hist-actions button:active { background: var(--bg); }
   .hist-actions .danger { color: var(--error); border-color: var(--error); }
 
-  .history-list { max-height: 300px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  .history-list { max-height: 320px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
   .history-item {
-    display: flex; align-items: flex-start; gap: 8px;
+    display: flex; align-items: flex-start; gap: 6px;
     padding: 8px 0; border-bottom: 1px solid var(--border);
     font-size: 13px; line-height: 1.4;
   }
   .history-item:last-child { border-bottom: none; }
+  .history-item .hi-check { margin: 0; flex-shrink: 0; margin-top: 3px; }
   .history-item .hi-body { flex: 1; min-width: 0; word-break: break-all; }
   .history-item .hi-time { font-size: 11px; color: var(--text2); }
-  .history-item .hi-del {
-    flex-shrink: 0; width: 28px; height: 28px; border: none;
-    background: none; color: var(--text2); font-size: 16px; cursor: pointer;
-    display: flex; align-items: center; justify-content: center;
-    border-radius: 6px;
+  .history-item .hi-preview { margin: 2px 0 5px; }
+  .history-item .hi-actions {
+    display: flex; gap: 5px; flex-wrap: wrap;
   }
-  .history-item .hi-del:active { background: var(--bg); color: var(--error); }
-  .history-item .hi-check { margin: 0; flex-shrink: 0; align-self: center; }
-  .history-item .hi-copy, .msg-copy {
-    flex-shrink: 0; padding: 2px 8px; border: 1px solid var(--border);
+  .hi-badge { display:inline-block; padding:0 5px; border-radius:999px; font-size:10px; font-weight:600; margin-right:4px; vertical-align:middle; }
+  .hi-badge.action-copy, .hi-badge.action-paste, .hi-badge.action-paste_terminal, .hi-badge.action-type { background:#e8f0fe; color:#1a73e8; }
+  .hi-badge.action-command { background:#d4edda; color:#28a745; }
+  .hi-badge.action-shell { background:#fff3cd; color:#e68900; }
+  [data-theme=dark] .hi-badge.action-copy,[data-theme=dark] .hi-badge.action-paste,[data-theme=dark] .hi-badge.action-paste_terminal,[data-theme=dark] .hi-badge.action-type { background:#1a2d5a; color:#7aadff; }
+  [data-theme=dark] .hi-badge.action-command { background:#1a3d27; color:#57e078; }
+  [data-theme=dark] .hi-badge.action-shell { background:#3d2e00; color:#ffb84d; }
+  .history-item .hi-fill, .history-item .hi-resend, .history-item .hi-copy, .msg-copy {
+    padding: 2px 8px; border: 1px solid var(--border);
     background: var(--card); color: var(--text2); font-size: 11px; cursor: pointer;
     border-radius: 6px; white-space: nowrap;
   }
-  .history-item .hi-copy:active, .msg-copy:active { background: var(--bg); color: var(--accent); border-color: var(--accent); }
+  .history-item .hi-fill:active, .history-item .hi-copy:active, .msg-copy:active { background: var(--bg); color: var(--accent); border-color: var(--accent); }
+  .history-item .hi-resend:active { background: var(--bg); color: #28a745; border-color: #28a745; }
+  .history-item .hi-del {
+    padding: 2px 7px; border: 1px solid var(--border);
+    background: var(--card); color: var(--text2); font-size: 11px; cursor: pointer;
+    border-radius: 6px; white-space: nowrap;
+  }
+  .history-item .hi-del:active { background: var(--bg); color: var(--error); border-color: var(--error); }
   .history-empty { text-align: center; color: var(--text2); font-size: 13px; padding: 16px 0; }
 
   /* Key operations */
@@ -476,15 +487,12 @@
   }
   .msg-reply-btn:active { background: var(--accent); color: #fff; }
   .msg-poll-status { font-size: 11px; color: var(--text2); text-align: right; margin-top: 4px; }
-  .msg-load-more {
-    text-align: center; padding: 12px 0;
+  .msg-load-older {
+    text-align: center; padding: 10px 0; font-size: 12px; color: var(--text2);
   }
-  .msg-load-more button {
-    font-size: 13px; padding: 8px 24px; border: 1.5px solid var(--accent);
-    border-radius: 10px; background: transparent; color: var(--accent);
-    cursor: pointer; font-weight: 500; transition: all .2s;
+  .history-load-more {
+    text-align: center; padding: 10px 0; font-size: 12px; color: var(--text2);
   }
-  .msg-load-more button:active { background: var(--accent); color: #fff; }
   .custom-text-wrap { margin-top: 10px; }
   .custom-text-wrap textarea {
     width: 100%; min-height: 56px; font-size: 14px; line-height: 1.5;
@@ -814,6 +822,12 @@
     <div class="hist-toolbar">
       <input type="text" id="histSearch" placeholder="搜索...">
       <input type="date" id="histDate">
+      <select id="histTypeFilter">
+        <option value="">全部类型</option>
+        <option value="copy">文本</option>
+        <option value="command">命令</option>
+        <option value="shell">Shell</option>
+      </select>
     </div>
     <div class="hist-actions">
       <button id="histSelectAll">全选</button>
@@ -990,6 +1004,7 @@
   restoreToggle(pressEnterEl, 'pressEnter', false);
   restoreToggle(restoreClipEl, 'restoreClip', true);
   restoreToggle(histEnabledEl, 'historyEnabled', false);
+  $('histDate').value = '';  // 清除浏览器缓存的日期过滤，避免刷新后误过滤
 
   const customTextEnabledEl = $('customTextEnabled');
   restoreToggle(customTextEnabledEl, 'customTextEnabled', false);
@@ -1020,6 +1035,10 @@
     if (histEnabledEl.checked) loadHistory();
   });
   $('historyPanel').style.display = histEnabledEl.checked ? 'block' : 'none';
+  if (histEnabledEl.checked) {
+    // 短暂延迟确保页面完全初始化，避免与筛选条件竞争
+    setTimeout(() => loadHistory(true), 100);
+  }
 
   // ===== Delay slider =====
   const savedDelay = LS('autoSendDelay');
@@ -1165,15 +1184,32 @@
   // ===== History =====
   let allItems = [];
   let histSelectedIds = new Set();
+  let histHasMore = false;
+  let histLoading = false;
+  const HIST_PAGE = 20;
 
-  async function loadHistory() {
+  async function loadHistory(reset = true) {
+    if (histLoading) return;
+    histLoading = true;
     try {
-      const res = await fetch(getBaseUrl() + '/history', { headers: authHeaders() });
+      let url = getBaseUrl() + '/history?limit=' + HIST_PAGE;
+      if (!reset && allItems.length > 0) {
+        const minId = Math.min(...allItems.map(i => i.id));
+        url += '&before_id=' + minId;
+      }
+      const res = await fetch(url, { headers: authHeaders() });
       const j = await res.json();
-      allItems = (j.items || []);
-      histSelectedIds.clear();
+      const newItems = j.items || [];
+      histHasMore = j.has_more || false;
+      if (reset) {
+        allItems = newItems;
+        histSelectedIds.clear();
+      } else {
+        allItems = allItems.concat(newItems);
+      }
       renderHistory();
     } catch (e) { /* silent */ }
+    histLoading = false;
   }
 
   function renderHistory() {
@@ -1184,32 +1220,55 @@
     const q = ($('histSearch').value || '').trim().toLowerCase();
     if (q) items = items.filter(i => (i.text || '').toLowerCase().includes(q));
 
-    // Date filter
+    // Date filter（用本地时间，避免 UTC 偏移误过滤）
     const d = $('histDate').value;
     if (d) {
-      const dayStart = new Date(d).getTime();
+      const [y, mo, dy] = d.split('-').map(Number);
+      const dayStart = new Date(y, mo - 1, dy).getTime();
       const dayEnd = dayStart + 86400000;
       items = items.filter(i => i.server_time >= dayStart && i.server_time < dayEnd);
+    }
+
+    // Type filter
+    const tf = ($('histTypeFilter').value || '').trim();
+    if (tf) {
+      if (tf === 'copy') items = items.filter(i => !['command','shell'].includes(i.action));
+      else items = items.filter(i => i.action === tf);
     }
 
     if (items.length === 0) {
       list.innerHTML = '<div class="history-empty">暂无记录</div>';
       return;
     }
+    const actionLabel = { copy:'文本', paste:'文本', paste_terminal:'文本', type:'文本', command:'命令', shell:'Shell' };
+    const isFiltering = q || d || tf;
     list.innerHTML = items.map(item => {
       const t = new Date(item.server_time).toLocaleString('zh-CN', {
         month: '2-digit', day: '2-digit',
         hour: '2-digit', minute: '2-digit', second: '2-digit'
       });
-      const preview = item.text.length > 100 ? item.text.slice(0, 100) + '...' : item.text;
+      const text = item.text || '';
+      const preview = text.length > 100 ? text.slice(0, 100) + '...' : text;
       const checked = histSelectedIds.has(item.id) ? ' checked' : '';
+      const act = item.action || 'copy';
+      const label = actionLabel[act] || act;
       return '<div class="history-item">' +
         '<input type="checkbox" class="hi-check" data-id="' + item.id + '"' + checked + '>' +
-        '<div class="hi-body"><span class="hi-time">' + t + '</span><br>' + escHtml(preview) + '</div>' +
-        '<button class="hi-copy" data-id="' + item.id + '" title="复制">复制</button>' +
-        '<button class="hi-del" data-id="' + item.id + '" title="删除">&#x2715;</button>' +
+        '<div class="hi-body">' +
+          '<div class="hi-time"><span class="hi-badge action-' + act + '">' + label + '</span>' + t + '</div>' +
+          '<div class="hi-preview">' + escHtml(preview) + '</div>' +
+          '<div class="hi-actions">' +
+            '<button class="hi-fill" data-id="' + item.id + '">填入</button>' +
+            '<button class="hi-resend" data-id="' + item.id + '">再发</button>' +
+            '<button class="hi-copy" data-id="' + item.id + '">复制</button>' +
+            '<button class="hi-del" data-id="' + item.id + '" title="\u5220\u9664">&#x2715;</button>' +
+          '</div>' +
+        '</div>' +
         '</div>';
     }).join('');
+    if (!isFiltering && histHasMore) {
+      list.innerHTML += '<div class="history-load-more" id="histLoadMore">上拉加载更多</div>';
+    }
   }
 
   function escHtml(s) {
@@ -1218,8 +1277,18 @@
     return d.innerHTML;
   }
 
-  $('histSearch').addEventListener('input', renderHistory);
-  $('histDate').addEventListener('change', renderHistory);
+  $('histSearch').addEventListener('input', () => { allItems = []; histHasMore = false; loadHistory(true); });
+  $('histDate').addEventListener('change', () => { allItems = []; histHasMore = false; loadHistory(true); });
+  $('histTypeFilter').addEventListener('change', () => { allItems = []; histHasMore = false; loadHistory(true); });
+
+  // 历史列表滚动触底自动加载更多
+  $('historyList').addEventListener('scroll', () => {
+    const el = $('historyList');
+    if (!histHasMore || histLoading) return;
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 40) {
+      loadHistory(false);
+    }
+  });
 
   // History checkbox
   $('historyList').addEventListener('change', e => {
@@ -1229,8 +1298,25 @@
     }
   });
 
-  // History click: copy or delete
+  // History click: fill / resend / copy / delete
   $('historyList').addEventListener('click', async (e) => {
+    const fillBtn = e.target.closest('.hi-fill');
+    if (fillBtn) {
+      const item = allItems.find(i => i.id === parseInt(fillBtn.dataset.id));
+      if (item) { textEl.value = item.text || ''; updateCharCount(); updateSendBtn(); textEl.focus(); toast('已填入输入框', true); }
+      return;
+    }
+    const resendBtn = e.target.closest('.hi-resend');
+    if (resendBtn) {
+      const item = allItems.find(i => i.id === parseInt(resendBtn.dataset.id));
+      if (!item) return;
+      const origVal = textEl.value;
+      textEl.value = item.text || '';
+      await doSend();
+      textEl.value = autoClearEl.checked ? '' : origVal;
+      updateCharCount(); updateSendBtn();
+      return;
+    }
     const copyBtn = e.target.closest('.hi-copy');
     if (copyBtn) {
       const id = parseInt(copyBtn.dataset.id);
@@ -1703,10 +1789,11 @@
   let allMessages = [];
   let msgSelectedIds = new Set();
   let lastMsgId = 0;
+  let msgOldestId = 0;
+  let msgHasMore = false;
+  let msgLoadingOld = false;
   let msgPollTimer = null;
-  const MSG_PAGE_SIZE = 20;
-  let msgDisplayCount = MSG_PAGE_SIZE;
-  let msgPollCount = 0;
+  let msgAtBottom = true;  // 是否在底部（控制自动吸底）
 
   function renderMarkdown(text) {
     if (typeof marked !== 'undefined') {
@@ -1715,89 +1802,120 @@
     return '<p>' + escHtml(text || '') + '</p>';
   }
 
-  async function loadMessages(sinceId) {
-    try {
-      const url = getBaseUrl() + '/messages' + (sinceId ? '?since=' + sinceId : '');
-      const res = await fetch(url, { headers: authHeaders() });
-      const j = await res.json();
-      return j.items || [];
-    } catch (e) { return []; }
+  function _buildMsgHtml(m) {
+    const t = new Date(m.timestamp).toLocaleString('zh-CN', {
+      month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit'
+    });
+    const checked = msgSelectedIds.has(m.id) ? ' checked' : '';
+    return '<div class="msg-item" data-id="' + m.id + '">' +
+      '<div class="msg-item-hdr">' +
+        '<input type="checkbox" class="msg-check" data-id="' + m.id + '"' + checked + '>' +
+        '<span class="msg-source">' + escHtml(m.source || 'api') + '</span>' +
+        '<span class="msg-time">' + t + '</span>' +
+        '<button class="msg-copy" data-id="' + m.id + '" title="\u590d\u5236">\u590d\u5236</button>' +
+        '<button class="msg-del" data-id="' + m.id + '" title="\u5220\u9664">&#x2715;</button>' +
+      '</div>' +
+      '<div class="msg-content">' + renderMarkdown(m.content) + '</div>' +
+    '</div>';
+  }
+
+  function _msgScrollToBottom() {
+    const el = $('msgList');
+    el.scrollTop = el.scrollHeight;
+  }
+
+  function _isAtBottom() {
+    const el = $('msgList');
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 60;
   }
 
   async function fullLoadMessages() {
-    allMessages = await loadMessages(0);
-    if (allMessages.length > 0) {
-      lastMsgId = Math.max(...allMessages.map(m => m.id));
-    }
-    msgSelectedIds.clear();
-    renderMessages();
+    try {
+      const res = await fetch(getBaseUrl() + '/messages?limit=50', { headers: authHeaders() });
+      const j = await res.json();
+      allMessages = j.items || [];
+      msgHasMore = j.has_more || false;
+      if (allMessages.length > 0) {
+        lastMsgId = Math.max(...allMessages.map(m => m.id));
+        msgOldestId = Math.min(...allMessages.map(m => m.id));
+      }
+      msgSelectedIds.clear();
+      renderMessages();
+      _msgScrollToBottom();
+    } catch (e) { /* silent */ }
+  }
+
+  async function loadOlderMessages() {
+    if (msgLoadingOld || !msgHasMore || msgOldestId === 0) return;
+    msgLoadingOld = true;
+    try {
+      const res = await fetch(
+        getBaseUrl() + '/messages?before_id=' + msgOldestId + '&limit=30',
+        { headers: authHeaders() }
+      );
+      const j = await res.json();
+      const older = j.items || [];
+      msgHasMore = j.has_more || false;
+      if (older.length > 0) {
+        allMessages = older.concat(allMessages);
+        msgOldestId = Math.min(...allMessages.map(m => m.id));
+        const list = $('msgList');
+        const prevH = list.scrollHeight;
+        renderMessages(false);  // 不吸底
+        list.scrollTop = list.scrollHeight - prevH;  // 保持当前视口位置
+      } else {
+        msgHasMore = false;
+        renderMessages(false);
+      }
+    } catch (e) { /* silent */ }
+    msgLoadingOld = false;
   }
 
   async function pollMessages() {
-    msgPollCount++;
-    // Periodic full refresh to handle server restart / data sync
-    if (msgPollCount % 10 === 0) {
-      await fullLoadMessages();
-      $('msgPollStatus').textContent = '同步: ' + new Date().toLocaleTimeString('zh-CN');
-      return;
-    }
-    const newItems = await loadMessages(lastMsgId);
-    if (newItems.length > 0) {
-      allMessages = allMessages.concat(newItems);
-      lastMsgId = Math.max(lastMsgId, ...newItems.map(m => m.id));
-      renderMessages();
-      const badge = $('msgBadge');
-      badge.textContent = newItems.length;
-      // Newest at top, scroll to top to see new messages
-      $('msgList').scrollTop = 0;
-    }
-    $('msgPollStatus').textContent = '刷新: ' + new Date().toLocaleTimeString('zh-CN');
+    try {
+      const url = getBaseUrl() + '/messages?since=' + lastMsgId + '&limit=50';
+      const res = await fetch(url, { headers: authHeaders() });
+      const j = await res.json();
+      const newItems = j.items || [];
+      if (newItems.length > 0) {
+        allMessages = allMessages.concat(newItems);
+        lastMsgId = Math.max(lastMsgId, ...newItems.map(m => m.id));
+        const wasAtBottom = _isAtBottom();
+        renderMessages(false);
+        if (wasAtBottom) _msgScrollToBottom();
+        else {
+          const badge = $('msgBadge');
+          badge.textContent = parseInt(badge.textContent || '0') + newItems.length;
+        }
+      }
+      $('msgPollStatus').textContent = '\u5237\u65b0: ' + new Date().toLocaleTimeString('zh-CN');
+    } catch (e) { /* silent */ }
   }
 
-  function renderMessages() {
+  function renderMessages(scrollBottom = true) {
     const list = $('msgList');
     let items = allMessages.slice();
     const q = ($('msgSearch').value || '').trim().toLowerCase();
     if (q) items = items.filter(m => (m.content || '').toLowerCase().includes(q));
     const d = $('msgDate').value;
     if (d) {
-      const dayStart = new Date(d).getTime();
+      const [y, mo, dy] = d.split('-').map(Number);
+      const dayStart = new Date(y, mo - 1, dy).getTime();
       const dayEnd = dayStart + 86400000;
       items = items.filter(m => m.timestamp >= dayStart && m.timestamp < dayEnd);
     }
-    // Newest first
-    items.sort((a, b) => b.id - a.id);
-    const total = items.length;
-    const isFiltering = q || d;
-    // Pagination (only when not searching/filtering)
-    if (!isFiltering && total > msgDisplayCount) {
-      items = items.slice(0, msgDisplayCount);
-    }
+    items.sort((a, b) => a.id - b.id);  // 旧→新，底部是最新
     if (items.length === 0) {
-      list.innerHTML = '<div class="msg-empty">暂无消息</div>';
+      list.innerHTML = '<div class="msg-empty">\u6682\u65e0\u6d88\u606f</div>';
       return;
     }
-    let html = items.map(m => {
-      const t = new Date(m.timestamp).toLocaleString('zh-CN', {
-        month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit'
-      });
-      const checked = msgSelectedIds.has(m.id) ? ' checked' : '';
-      const rendered = renderMarkdown(m.content);
-      return '<div class="msg-item" data-id="' + m.id + '">' +
-        '<div class="msg-item-hdr">' +
-          '<input type="checkbox" class="msg-check" data-id="' + m.id + '"' + checked + '>' +
-          '<span class="msg-source">' + escHtml(m.source || 'api') + '</span>' +
-          '<span class="msg-time">' + t + '</span>' +
-          '<button class="msg-copy" data-id="' + m.id + '" title="复制">复制</button>' +
-          '<button class="msg-del" data-id="' + m.id + '" title="删除">&#x2715;</button>' +
-        '</div>' +
-        '<div class="msg-content">' + rendered + '</div>' +
-      '</div>';
-    }).join('');
-    if (!isFiltering && total > items.length) {
-      html += '<div class="msg-load-more"><button id="msgLoadMore">加载更多（剩余 ' + (total - items.length) + ' 条）</button></div>';
+    let html = '';
+    if (msgHasMore && !q && !d) {
+      html += '<div class="msg-load-older" id="msgLoadOlder">\u5411\u4e0a\u6eda\u52a8\u52a0\u8f7d\u66f4\u65e9\u7684\u6d88\u606f</div>';
     }
+    html += items.map(_buildMsgHtml).join('');
     list.innerHTML = html;
+    if (scrollBottom) _msgScrollToBottom();
   }
 
   function startMsgPolling() {
@@ -1807,15 +1925,13 @@
     }, 3000);
   }
 
-  $('msgSearch').addEventListener('input', () => { msgDisplayCount = MSG_PAGE_SIZE; renderMessages(); });
-  $('msgDate').addEventListener('change', () => { msgDisplayCount = MSG_PAGE_SIZE; renderMessages(); });
+  $('msgSearch').addEventListener('input', () => renderMessages());
+  $('msgDate').addEventListener('change', () => renderMessages());
 
-  // Load more messages
-  $('msgList').addEventListener('click', e => {
-    if (e.target.id === 'msgLoadMore' || e.target.closest('#msgLoadMore')) {
-      msgDisplayCount += MSG_PAGE_SIZE;
-      renderMessages();
-    }
+  // 触顶加载更旧消息
+  $('msgList').addEventListener('scroll', () => {
+    $('msgBadge').textContent = '';
+    if ($('msgList').scrollTop < 60) loadOlderMessages();
   });
 
   // Checkbox

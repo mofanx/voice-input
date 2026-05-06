@@ -412,8 +412,11 @@ class CommandEngine:
         return shutil.which(expanded) or expanded
 
 
+_TRAILING_PUNCT = re.compile(r'[，。、；：？！,.;:?!]+$')
+
 def normalize_text(text: str) -> str:
-    return " ".join(str(text or "").strip().lower().split())
+    s = " ".join(str(text or "").strip().lower().split())
+    return _TRAILING_PUNCT.sub("", s).rstrip()
 
 
 def strip_command_prefix(text: str, prefix: str = "/") -> str:

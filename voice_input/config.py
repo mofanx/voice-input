@@ -44,6 +44,9 @@ class AppConfig:
         r"mv\s+.+\s+/dev/null",
     ])
 
+    # 持久化
+    db_path: str = ""
+
     # 生产部署
     workers: int = 1
     log_level: str = "info"
@@ -89,6 +92,7 @@ def load_from_env() -> dict:
         "VOICE_INPUT_SHELL_ENABLED": "shell_enabled",
         "VOICE_INPUT_SHELL_PREFIX": "shell_prefix",
         "VOICE_INPUT_SHELL_CONFIRM": "shell_confirm",
+        "VOICE_INPUT_DB_PATH": "db_path",
         "VOICE_INPUT_WORKERS": "workers",
         "VOICE_INPUT_LOG_LEVEL": "log_level",
     }
@@ -239,6 +243,10 @@ def build_config(
         candidate = config_dir / "commands.yaml"
         if candidate.exists():
             merged["command_file"] = str(candidate)
+
+    # db_path 为空时，自动指向用户配置目录的 voice_input.db
+    if not merged.get("db_path") and config_dir:
+        merged["db_path"] = str(config_dir / "voice_input.db")
 
     # 类型转换
     coerced = {k: _coerce(k, v) for k, v in merged.items()}
