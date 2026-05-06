@@ -16,6 +16,10 @@ from collections import deque
 
 from flask import Flask, request, jsonify, render_template, Response
 
+from .commands import (
+    CommandEngine, command_result_to_dict, strip_command_prefix,
+    exec_shell_command, shell_result_to_dict, strip_shell_prefix,
+)
 from .config import AppConfig
 from .utils import get_local_ip, get_client_ip, is_ip_allowed, is_token_valid
 
@@ -306,6 +310,7 @@ def create_app(config: AppConfig) -> Flask:
     app.voice_messages = deque(maxlen=config.history_size)
     app.voice_messages_lock = threading.Lock()
     app.voice_messages_counter = 0
+    app.command_engine = CommandEngine.from_config(config, key_executor=lambda key: _do_key_press(key))
 
     # 预热 keyboard / pyclip，强制完成底层设备初始化
     # keyboard 在 Linux 上首次按键时才创建 /dev/uinput 虚拟设备，
@@ -385,6 +390,10 @@ def create_app(config: AppConfig) -> Flask:
                 "require_token": bool(cfg.token) or cfg.require_token,
                 "auto_paste": cfg.auto_paste,
                 "history_size": cfg.history_size,
+                "command_mode_enabled": cfg.command_mode_enabled,
+                "command_prefix": cfg.command_prefix,
+                "shell_enabled": cfg.shell_enabled,
+                "shell_prefix": cfg.shell_prefix,
                 "timestamp": int(time.time() * 1000),
             }
         )
@@ -528,11 +537,109 @@ def create_app(config: AppConfig) -> Flask:
         action = data.get("action", "paste" if cfg.auto_paste else "copy")
         restore_clipboard = bool(data.get("restore_clipboard", False))
         press_enter = bool(data.get("press_enter", False))
+        confirmed = bool(data.get("confirmed", False))
+        input_mode = str(data.get("input_mode", "auto")).strip().lower()
+        if input_mode not in {"text", "command", "auto"}:
+            input_mode = "auto"
 
         # 6. 时间戳偏差警告
         current_time = int(time.time() * 1000)
         if abs(current_time - timestamp) > 30000:
             logging.warning(f"时间戳偏差过大: {current_time - timestamp}ms")
+
+        _run_shell = False
+        _run_command = False
+        _command_text = text
+        _shell_cmd = ""
+        raw_text = text.strip()
+
+        if cfg.shell_enabled and raw_text.startswith(cfg.shell_prefix):
+            _run_shell = True
+            _shell_cmd = strip_shell_prefix(text, cfg.shell_prefix)
+        elif cfg.command_mode_enabled and input_mode == "command":
+            _run_command = True
+            _command_text = strip_command_prefix(text, cfg.command_prefix)
+        elif cfg.command_mode_enabled and input_mode == "auto" and raw_text.startswith(cfg.command_prefix):
+            _run_command = True
+            _command_text = strip_command_prefix(text, cfg.command_prefix)
+
+        if _run_shell:
+            if not _shell_cmd.strip():
+                return jsonify({"code": 400, "message": "Shell command is empty",
+                                "server_time": current_time, "action": "shell", "device_id": device_id}), 400
+            shell_res = exec_shell_command(
+                _shell_cmd,
+                danger_patterns=cfg.shell_danger_patterns,
+                confirmed=confirmed,
+                need_confirm=cfg.shell_confirm,
+            )
+            payload = shell_result_to_dict(shell_res)
+            payload.update({"server_time": current_time, "action": "shell", "device_id": device_id})
+            if shell_res.dangerous:
+                payload["code"] = 403
+                payload["message"] = "Dangerous command blocked"
+                return jsonify(payload), 403
+            if shell_res.requires_confirmation:
+                payload["code"] = 202
+                payload["message"] = "Shell command requires confirmation"
+                return jsonify(payload), 202
+            if shell_res.error:
+                payload["code"] = 500
+                payload["message"] = "Shell execution failed"
+                return jsonify(payload), 500
+            payload["code"] = 200
+            payload["message"] = "success"
+            with app.voice_history_lock:
+                app.voice_history_counter += 1
+                app.voice_history.appendleft({
+                    "id": app.voice_history_counter,
+                    "server_time": current_time,
+                    "client_ip": client_ip,
+                    "device_id": device_id,
+                    "action": "shell",
+                    "text": text,
+                    "command_id": None,
+                })
+            return jsonify(payload)
+
+        if _run_command:
+            result = app.command_engine.execute(_command_text, confirmed=confirmed)
+            payload = command_result_to_dict(result)
+            payload.update({
+                "code": 200 if not result.error else 500,
+                "message": "success" if not result.error else "Command action failed",
+                "server_time": current_time,
+                "action": "command",
+                "device_id": device_id,
+            })
+            if result.requires_confirmation:
+                payload["code"] = 202
+                payload["message"] = "Command requires confirmation"
+                return jsonify(payload), 202
+            if result.error:
+                return jsonify(payload), 500
+            if not result.matched:
+                return jsonify({
+                    "code": 404,
+                    "message": "Command not matched",
+                    "server_time": current_time,
+                    "action": "command",
+                    "device_id": device_id,
+                }), 404
+            with app.voice_history_lock:
+                app.voice_history_counter += 1
+                app.voice_history.appendleft(
+                    {
+                        "id": app.voice_history_counter,
+                        "server_time": current_time,
+                        "client_ip": client_ip,
+                        "device_id": device_id,
+                        "action": "command",
+                        "text": text,
+                        "command_id": payload.get("command_id"),
+                    }
+                )
+            return jsonify(payload)
 
         # 7. 执行剪贴板和键盘操作
         try:
@@ -594,7 +701,161 @@ def create_app(config: AppConfig) -> Flask:
                 500,
             )
 
+    # ==================== Shell Direct API ====================
+
+    @app.route("/shell", methods=["POST"])
+    def run_shell():
+        auth_err = _check_auth()
+        if auth_err:
+            return auth_err
+        if not app.voice_config.shell_enabled:
+            return jsonify({"code": 403, "message": "Shell execution is disabled"}), 403
+        data = request.get_json(silent=True) or {}
+        cmd = str(data.get("cmd", "")).strip()
+        if not cmd:
+            return jsonify({"code": 400, "message": "cmd is required"}), 400
+        confirmed = bool(data.get("confirmed", False))
+        shell_res = exec_shell_command(
+            cmd,
+            danger_patterns=app.voice_config.shell_danger_patterns,
+            confirmed=confirmed,
+            need_confirm=app.voice_config.shell_confirm,
+        )
+        payload = shell_result_to_dict(shell_res)
+        if shell_res.dangerous:
+            payload.update({"code": 403, "message": "Dangerous command blocked"})
+            return jsonify(payload), 403
+        if shell_res.requires_confirmation:
+            payload.update({"code": 202, "message": "Shell command requires confirmation"})
+            return jsonify(payload), 202
+        if shell_res.error:
+            payload.update({"code": 500, "message": "Shell execution failed"})
+            return jsonify(payload), 500
+        payload.update({"code": 200, "message": "success"})
+        return jsonify(payload)
+
     # ==================== CORS ====================
+
+    @app.route("/commands", methods=["GET"])
+    def list_commands():
+        auth_err = _check_auth()
+        if auth_err:
+            return auth_err
+        return jsonify({
+            "code": 200,
+            "message": "success",
+            "enabled": app.voice_config.command_mode_enabled,
+            "prefix": app.voice_config.command_prefix,
+            "items": app.command_engine.list_commands(),
+        })
+
+    @app.route("/commands", methods=["POST"])
+    def add_command():
+        auth_err = _check_auth()
+        if auth_err:
+            return auth_err
+        data = request.get_json(silent=True) or {}
+        try:
+            item = app.command_engine.add_command(data)
+            return jsonify({"code": 201, "message": "created", "item": item}), 201
+        except ValueError as e:
+            return jsonify({"code": 400, "message": "Invalid command", "error_detail": str(e)}), 400
+        except Exception as e:
+            logging.error(f"新增命令失败: {e}")
+            return jsonify({"code": 500, "message": "Command save failed", "error_detail": str(e)}), 500
+
+    @app.route("/commands/<command_id>", methods=["GET"])
+    def get_command(command_id):
+        auth_err = _check_auth()
+        if auth_err:
+            return auth_err
+        item = app.command_engine.get_command(command_id)
+        if item is None:
+            return jsonify({"code": 404, "message": "Command not found"}), 404
+        return jsonify({"code": 200, "message": "success", "item": item})
+
+    @app.route("/commands/<command_id>", methods=["PUT"])
+    def update_command(command_id):
+        auth_err = _check_auth()
+        if auth_err:
+            return auth_err
+        data = request.get_json(silent=True) or {}
+        try:
+            item = app.command_engine.update_command(command_id, data)
+            return jsonify({"code": 200, "message": "success", "item": item})
+        except KeyError:
+            return jsonify({"code": 404, "message": "Command not found"}), 404
+        except ValueError as e:
+            return jsonify({"code": 400, "message": "Invalid command", "error_detail": str(e)}), 400
+        except Exception as e:
+            logging.error(f"更新命令失败: {e}")
+            return jsonify({"code": 500, "message": "Command save failed", "error_detail": str(e)}), 500
+
+    @app.route("/commands/<command_id>", methods=["DELETE"])
+    def delete_command(command_id):
+        auth_err = _check_auth()
+        if auth_err:
+            return auth_err
+        try:
+            removed = app.command_engine.delete_command(command_id)
+        except Exception as e:
+            logging.error(f"删除命令失败: {e}")
+            return jsonify({"code": 500, "message": "Command save failed", "error_detail": str(e)}), 500
+        if not removed:
+            return jsonify({"code": 404, "message": "Command not found"}), 404
+        return jsonify({"code": 200, "message": "success", "removed": 1})
+
+    @app.route("/commands/reload", methods=["POST"])
+    def reload_commands():
+        auth_err = _check_auth()
+        if auth_err:
+            return auth_err
+        try:
+            count = app.command_engine.reload()
+            return jsonify({"code": 200, "message": "success", "count": count})
+        except Exception as e:
+            logging.error(f"重载命令失败: {e}")
+            return jsonify({"code": 500, "message": "Command reload failed", "error_detail": str(e)}), 500
+
+    @app.route("/commands/test", methods=["POST"])
+    def test_command():
+        auth_err = _check_auth()
+        if auth_err:
+            return auth_err
+        data = request.get_json(silent=True) or {}
+        text = strip_command_prefix(str(data.get("text", "")), app.voice_config.command_prefix)
+        result = app.command_engine.match(text)
+        payload = command_result_to_dict(result)
+        payload.update({"code": 200, "message": "success"})
+        return jsonify(payload)
+
+    @app.route("/commands/execute", methods=["POST"])
+    def execute_command():
+        auth_err = _check_auth()
+        if auth_err:
+            return auth_err
+        data = request.get_json(silent=True) or {}
+        text = strip_command_prefix(str(data.get("text", "")), app.voice_config.command_prefix)
+        result = app.command_engine.execute(
+            text,
+            confirmed=bool(data.get("confirmed", False)),
+            dry_run=bool(data.get("dry_run", False)),
+        )
+        payload = command_result_to_dict(result)
+        payload.update({"code": 200, "message": "success"})
+        if result.requires_confirmation:
+            payload["code"] = 202
+            payload["message"] = "Command requires confirmation"
+            return jsonify(payload), 202
+        if result.error:
+            payload["code"] = 500
+            payload["message"] = "Command action failed"
+            return jsonify(payload), 500
+        if not result.matched:
+            payload["code"] = 404
+            payload["message"] = "Command not matched"
+            return jsonify(payload), 404
+        return jsonify(payload)
 
     @app.before_request
     def handle_options_preflight():
@@ -606,7 +867,7 @@ def create_app(config: AppConfig) -> Flask:
     @app.after_request
     def add_cors_headers(resp):
         resp.headers["Access-Control-Allow-Origin"] = "*"
-        resp.headers["Access-Control-Allow-Methods"] = "GET, POST, DELETE, OPTIONS"
+        resp.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
         resp.headers["Access-Control-Allow-Headers"] = "Content-Type, X-Auth-Token"
         resp.headers["Access-Control-Max-Age"] = "86400"
         return resp

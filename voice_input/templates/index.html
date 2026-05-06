@@ -185,6 +185,10 @@
   }
   .send-btn:active { background: var(--accent-active); transform: scale(0.98); }
   .send-btn:disabled { opacity: 0.5; }
+  .send-btn.is-command { background: var(--success); }
+  .send-btn.is-command:active { background: #28a745; }
+  .send-btn.is-shell { background: var(--warn); }
+  .send-btn.is-shell:active { background: #e68900; }
 
   /* Toast */
   .toast {
@@ -485,6 +489,49 @@
   }
   .custom-text-wrap textarea:focus { border-color: var(--accent); }
   .custom-text-wrap.is-hidden { display: none; }
+  .cmd-toolbar {
+    display: flex; flex-wrap: wrap; gap: 8px; margin: 10px 0 8px;
+  }
+  .cmd-toolbar input, .cmd-toolbar select {
+    flex: 1; min-width: 0; font-size: 13px; padding: 7px 10px;
+    border: 1px solid var(--border); border-radius: 8px; background: var(--bg);
+    color: var(--text); outline: none;
+  }
+  .cmd-actions {
+    display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px;
+  }
+  .cmd-actions button, .cmd-btn {
+    font-size: 12px; padding: 5px 10px; border: 1px solid var(--border);
+    border-radius: 8px; background: var(--card); color: var(--text);
+    cursor: pointer; white-space: nowrap;
+  }
+  .cmd-actions .danger, .cmd-btn.danger { color: var(--error); border-color: var(--error); }
+  .cmd-list { max-height: 360px; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  .cmd-item {
+    padding: 9px 0; border-bottom: 1px solid var(--border);
+  }
+  .cmd-item:last-child { border-bottom: none; }
+  .cmd-head { display: flex; align-items: center; gap: 8px; }
+  .cmd-main { flex: 1; min-width: 0; }
+  .cmd-name { font-size: 13px; font-weight: 600; word-break: break-all; }
+  .cmd-meta { font-size: 11px; color: var(--text2); margin-top: 2px; word-break: break-all; }
+  .cmd-badge {
+    display: inline-block; padding: 1px 6px; border-radius: 999px;
+    font-size: 10px; background: var(--bg); color: var(--text2); margin-left: 4px;
+  }
+  .cmd-badge.high { color: var(--error); }
+  .cmd-badge.medium { color: var(--warn); }
+  .cmd-patterns { font-size: 12px; color: var(--text2); margin-top: 5px; word-break: break-all; }
+  .cmd-row-actions { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 7px; }
+  .cmd-editor textarea {
+    width: 100%; min-height: 180px; font-size: 12px; line-height: 1.45;
+    padding: 10px; border: 1px solid var(--border); border-radius: 10px;
+    background: var(--bg); color: var(--text); resize: vertical; outline: none;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  .cmd-editor.is-hidden { display: none; }
+  .cmd-status { font-size: 11px; color: var(--text2); margin: 6px 0; }
+  .cmd-empty { text-align: center; color: var(--text2); font-size: 13px; padding: 16px 0; }
 </style>
 </head>
 <body>
@@ -566,6 +613,7 @@
     <span class="fold-arrow">▾</span>
   </div>
   <div class="fold-body" id="settingsBody">
+  <div class="mode-title">发送方式</div>
   <div class="mode-group">
     <input type="radio" name="mode" id="mode_copy" value="copy">
     <label for="mode_copy">仅复制</label>
@@ -702,6 +750,46 @@
   </div>
 </div>
 
+<!-- Command Management -->
+<div class="card">
+  <div class="section-hdr">
+    <h3>命令管理 <span class="cmd-badge" id="cmdModeBadge">/</span></h3>
+    <label class="switch">
+      <input type="checkbox" id="cmdPanelEnabled">
+      <span class="slider"></span>
+    </label>
+  </div>
+  <div id="cmdPanel" style="display:none; margin-top:10px;">
+    <div class="cmd-toolbar">
+      <input type="text" id="cmdSearch" placeholder="搜索命令、分类、触发词...">
+      <select id="cmdCategory">
+        <option value="">全部分类</option>
+      </select>
+    </div>
+    <div class="cmd-toolbar">
+      <input type="text" id="cmdTestText" placeholder="测试或执行，例如：/切换应用">
+    </div>
+    <div class="cmd-actions">
+      <button id="cmdRefresh" type="button">刷新</button>
+      <button id="cmdReload" type="button">重载 YAML</button>
+      <button id="cmdNew" type="button">新增</button>
+      <button id="cmdTest" type="button">测试匹配</button>
+      <button id="cmdExecute" type="button">执行</button>
+    </div>
+    <div class="cmd-status" id="cmdStatus">未加载</div>
+    <div class="cmd-editor is-hidden" id="cmdEditor">
+      <textarea id="cmdJson" spellcheck="false" autocomplete="off"></textarea>
+      <div class="cmd-actions">
+        <button id="cmdSave" type="button">保存</button>
+        <button id="cmdCancelEdit" type="button">取消</button>
+      </div>
+    </div>
+    <div class="cmd-list" id="cmdList">
+      <div class="cmd-empty">暂无命令</div>
+    </div>
+  </div>
+</div>
+
 <!-- History -->
 <div class="card">
   <div class="section-hdr">
@@ -763,6 +851,20 @@
     applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
   });
 
+  // ===== 服务端能力缓存 =====
+  let _serverCaps = { shell_enabled: false, shell_prefix: ':', command_prefix: '/' };
+  async function fetchServerCaps() {
+    try {
+      const res = await fetch(getBaseUrl() + '/status', { headers: authHeaders() });
+      if (res.ok) {
+        const j = await res.json();
+        _serverCaps.shell_enabled = !!j.shell_enabled;
+        _serverCaps.shell_prefix = j.shell_prefix || ':';
+        _serverCaps.command_prefix = j.command_prefix || '/';
+      }
+    } catch (e) { /* silent */ }
+  }
+
   // ===== Server URL & Token =====
   function getBaseUrl() {
     return (LS('serverUrl') || '').trim().replace(/\/$/, '');
@@ -812,6 +914,7 @@
 
   // Check connection on load
   checkConnection();
+  fetchServerCaps();
 
   // ===== PWA Install Banner =====
   let deferredInstallPrompt = null;
@@ -923,6 +1026,23 @@
     charCountEl.textContent = len + extra;
   }
   textEl.addEventListener('input', updateCharCount);
+
+  // ===== Send button dynamic hint =====
+  const sendBtn = $('send');
+  function updateSendBtn() {
+    const v = textEl.value.trim();
+    if (_serverCaps.shell_enabled && v.startsWith(_serverCaps.shell_prefix)) {
+      sendBtn.textContent = 'Shell 执行';
+      sendBtn.className = 'send-btn is-shell';
+    } else if (v.startsWith(_serverCaps.command_prefix)) {
+      sendBtn.textContent = '执行命令';
+      sendBtn.className = 'send-btn is-command';
+    } else {
+      sendBtn.textContent = '发送到电脑';
+      sendBtn.className = 'send-btn';
+    }
+  }
+  textEl.addEventListener('input', updateSendBtn);
   updateCharCount();
 
   // ===== Auto-send debounce =====
@@ -959,9 +1079,28 @@
     try {
       const res = await fetch(getBaseUrl() + '/input', { method: 'POST', headers, body: JSON.stringify(payload) });
       const j = await res.json().catch(() => null);
-      if (res.ok) {
-        toast('已发送到电脑', true);
-        if (autoClearEl.checked) { textEl.value = ''; charCountEl.textContent = '0'; }
+      if (res.status === 202 && j && j.requires_confirmation) {
+        const isShell = j.action === 'shell';
+        const label = isShell ? ('Shell 命令：「' + (j.cmd || '') + '」') : ('高风险命令：「' + (j.command_name || j.command_id || '未知命令') + '」');
+        if (confirm(label + '，确认执行？')) {
+          payload.confirmed = true;
+          const res2 = await fetch(getBaseUrl() + '/input', { method: 'POST', headers, body: JSON.stringify(payload) });
+          const j2 = await res2.json().catch(() => null);
+          if (res2.ok) {
+            toast(isShell ? 'Shell 已执行' : '命令已执行', true);
+            if (autoClearEl.checked) { textEl.value = ''; updateCharCount(); updateSendBtn(); }
+            if (histEnabledEl.checked) loadHistory();
+          } else {
+            toast('执行失败: ' + (j2 && j2.message ? j2.message : res2.status), false);
+          }
+        }
+      } else if (res.status === 403 && j && j.dangerous) {
+        toast('危险命令已拦截: ' + (j.danger_reason || ''), false);
+      } else if (res.ok) {
+        const act = j && j.action;
+        const msg = act === 'shell' ? 'Shell 已执行' : act === 'command' ? '命令已执行' : '已发送到电脑';
+        toast(msg, true);
+        if (autoClearEl.checked) { textEl.value = ''; updateCharCount(); updateSendBtn(); }
         if (histEnabledEl.checked) loadHistory();
       } else {
         toast('失败: ' + (j && j.message ? j.message : res.status), false);
@@ -971,7 +1110,7 @@
     } finally {
       sending = false;
       $('send').disabled = false;
-      $('send').textContent = '发送到电脑';
+      updateSendBtn();
     }
   }
   $('send').addEventListener('click', doSend);
@@ -1231,6 +1370,286 @@
     if (e.key === 'Enter') { e.preventDefault(); const k = $('customKey').value.trim(); if (k) sendKey(k); }
   });
   renderModifiers();
+
+  const cmdPanelEl = $('cmdPanelEnabled');
+  const cmdPanel = $('cmdPanel');
+  const cmdListEl = $('cmdList');
+  const cmdStatusEl = $('cmdStatus');
+  const cmdEditorEl = $('cmdEditor');
+  const cmdJsonEl = $('cmdJson');
+  let cmdItems = [];
+  let cmdPrefix = '/';
+  let cmdEditingId = null;
+
+  restoreToggle(cmdPanelEl, 'cmdPanelEnabled', false);
+  cmdPanel.style.display = cmdPanelEl.checked ? 'block' : 'none';
+  cmdPanelEl.addEventListener('change', () => {
+    LS_SET('cmdPanelEnabled', cmdPanelEl.checked ? '1' : '0');
+    cmdPanel.style.display = cmdPanelEl.checked ? 'block' : 'none';
+    if (cmdPanelEl.checked && cmdItems.length === 0) loadCommands();
+  });
+
+  function cmdHeaders() {
+    return Object.assign({'Content-Type': 'application/json'}, authHeaders());
+  }
+
+  function cmdSetStatus(text) {
+    cmdStatusEl.textContent = text;
+  }
+
+  function cmdActionSummary(action) {
+    if (!action) return '';
+    if (action.type === 'key') return 'key: ' + (action.key || '');
+    if (action.type === 'gauto') return 'gauto: ' + (action.args || []).join(' ');
+    if (action.type === 'gauto_template') return 'gauto: ' + (action.template || []).join(' ');
+    if (action.type === 'shell') return 'shell: ' + (action.command || []).join(' ');
+    if (action.type === 'platform_shell') return 'platform_shell';
+    return action.type || '';
+  }
+
+  function cmdRefreshCategories() {
+    const sel = $('cmdCategory');
+    const current = sel.value;
+    const cats = Array.from(new Set(cmdItems.map(x => x.category || 'custom'))).sort();
+    sel.innerHTML = '<option value="">全部分类</option>' + cats.map(c => '<option value="' + escHtml(c) + '">' + escHtml(c) + '</option>').join('');
+    if (cats.includes(current)) sel.value = current;
+  }
+
+  async function loadCommands() {
+    cmdSetStatus('加载中...');
+    try {
+      const res = await fetch(getBaseUrl() + '/commands', { headers: authHeaders() });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.message || res.status);
+      cmdItems = j.items || [];
+      cmdPrefix = j.prefix || '/';
+      $('cmdModeBadge').textContent = j.enabled ? cmdPrefix : '关闭';
+      cmdRefreshCategories();
+      renderCommands();
+      cmdSetStatus('已加载 ' + cmdItems.length + ' 条命令');
+    } catch (e) {
+      cmdSetStatus('加载失败: ' + e.message);
+      toast('命令加载失败', false);
+    }
+  }
+
+  function renderCommands() {
+    let items = cmdItems.slice();
+    const q = ($('cmdSearch').value || '').trim().toLowerCase();
+    const cat = $('cmdCategory').value;
+    if (cat) items = items.filter(x => (x.category || 'custom') === cat);
+    if (q) {
+      items = items.filter(x => {
+        const patterns = ((x.match || {}).patterns || []).join(' ');
+        return [x.id, x.name, x.category, x.risk, patterns, cmdActionSummary(x.action)].join(' ').toLowerCase().includes(q);
+      });
+    }
+    if (items.length === 0) {
+      cmdListEl.innerHTML = '<div class="cmd-empty">暂无命令</div>';
+      return;
+    }
+    cmdListEl.innerHTML = items.map(item => {
+      const match = item.match || {};
+      const patterns = (match.patterns || []).join(' / ');
+      const enabledText = item.enabled === false ? '已禁用' : '启用';
+      const risk = item.risk || 'low';
+      return '<div class="cmd-item" data-id="' + escHtml(item.id) + '">' +
+        '<div class="cmd-head">' +
+          '<div class="cmd-main">' +
+            '<div class="cmd-name">' + escHtml(item.name || item.id) +
+              '<span class="cmd-badge">' + escHtml(item.category || 'custom') + '</span>' +
+              '<span class="cmd-badge ' + escHtml(risk) + '">' + escHtml(risk) + '</span>' +
+              '<span class="cmd-badge">' + enabledText + '</span>' +
+            '</div>' +
+            '<div class="cmd-meta">' + escHtml(item.id) + ' · ' + escHtml(match.type || 'keyword') + ' · ' + escHtml(cmdActionSummary(item.action)) + '</div>' +
+          '</div>' +
+        '</div>' +
+        '<div class="cmd-patterns">' + escHtml(patterns) + '</div>' +
+        '<div class="cmd-row-actions">' +
+          '<button class="cmd-btn" data-act="fill">填入</button>' +
+          '<button class="cmd-btn" data-act="test">测试</button>' +
+          '<button class="cmd-btn" data-act="execute">执行</button>' +
+          '<button class="cmd-btn" data-act="toggle">' + (item.enabled === false ? '启用' : '禁用') + '</button>' +
+          '<button class="cmd-btn" data-act="edit">编辑</button>' +
+          '<button class="cmd-btn danger" data-act="delete">删除</button>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+  }
+
+  function cmdDefaultCommand() {
+    return {
+      id: 'custom_' + Date.now(),
+      name: '自定义命令',
+      enabled: true,
+      category: 'custom',
+      match: { type: 'keyword', patterns: ['自定义命令'] },
+      action: { type: 'key', key: 'ctrl+t' },
+      risk: 'low',
+      confirm: false
+    };
+  }
+
+  function cmdOpenEditor(item) {
+    cmdEditingId = item && item.id ? item.id : null;
+    cmdJsonEl.value = JSON.stringify(item || cmdDefaultCommand(), null, 2);
+    cmdEditorEl.classList.remove('is-hidden');
+    cmdJsonEl.focus();
+  }
+
+  function cmdCloseEditor() {
+    cmdEditingId = null;
+    cmdJsonEl.value = '';
+    cmdEditorEl.classList.add('is-hidden');
+  }
+
+  async function cmdSaveEditor() {
+    let data;
+    try {
+      data = JSON.parse(cmdJsonEl.value);
+    } catch (e) {
+      toast('JSON 格式错误: ' + e.message, false);
+      return;
+    }
+    try {
+      const method = cmdEditingId ? 'PUT' : 'POST';
+      const url = getBaseUrl() + '/commands' + (cmdEditingId ? '/' + encodeURIComponent(cmdEditingId) : '');
+      const res = await fetch(url, { method, headers: cmdHeaders(), body: JSON.stringify(data) });
+      const j = await res.json().catch(() => null);
+      if (!res.ok) throw new Error((j && (j.error_detail || j.message)) || res.status);
+      toast('命令已保存', true);
+      cmdCloseEditor();
+      await loadCommands();
+    } catch (e) {
+      toast('保存失败: ' + e.message, false);
+    }
+  }
+
+  function cmdTextFromItem(item) {
+    const patterns = ((item.match || {}).patterns || []);
+    return cmdPrefix + (patterns[0] || item.name || item.id || '');
+  }
+
+  async function cmdPost(path, payload) {
+    const res = await fetch(getBaseUrl() + path, { method: 'POST', headers: cmdHeaders(), body: JSON.stringify(payload || {}) });
+    const j = await res.json().catch(() => null);
+    if (!res.ok) throw new Error((j && (j.error_detail || j.message)) || res.status);
+    return j || {};
+  }
+
+  async function cmdTestText(text) {
+    if (!text.trim()) { toast('请先输入命令文本', false); return; }
+    try {
+      const j = await cmdPost('/commands/test', { text });
+      if (j.matched) {
+        cmdSetStatus('匹配：' + j.command_name + ' (' + j.command_id + ')');
+        toast('匹配：' + j.command_name, true);
+      } else {
+        cmdSetStatus('未匹配');
+        toast('未匹配命令', false);
+      }
+    } catch (e) {
+      toast('测试失败: ' + e.message, false);
+    }
+  }
+
+  async function cmdExecuteText(text, confirmed) {
+    if (!text.trim()) { toast('请先输入命令文本', false); return; }
+    try {
+      const j = await cmdPost('/commands/execute', { text, confirmed: !!confirmed });
+      if (j.requires_confirmation) {
+        if (confirm('确认执行高风险命令：' + (j.command_name || j.command_id) + '？')) {
+          return cmdExecuteText(text, true);
+        }
+        return;
+      }
+      if (j.matched) {
+        cmdSetStatus('已执行：' + j.command_name);
+        toast('命令已执行', true);
+      } else {
+        cmdSetStatus('未匹配');
+        toast('未匹配命令', false);
+      }
+    } catch (e) {
+      toast('执行失败: ' + e.message, false);
+    }
+  }
+
+  $('cmdSearch').addEventListener('input', renderCommands);
+  $('cmdCategory').addEventListener('change', renderCommands);
+  $('cmdRefresh').addEventListener('click', loadCommands);
+  $('cmdNew').addEventListener('click', () => cmdOpenEditor(null));
+  $('cmdCancelEdit').addEventListener('click', cmdCloseEditor);
+  $('cmdSave').addEventListener('click', cmdSaveEditor);
+  $('cmdTest').addEventListener('click', () => cmdTestText($('cmdTestText').value));
+  $('cmdExecute').addEventListener('click', () => cmdExecuteText($('cmdTestText').value, false));
+  $('cmdReload').addEventListener('click', async () => {
+    try {
+      const j = await cmdPost('/commands/reload', {});
+      toast('已重载 ' + j.count + ' 条命令', true);
+      await loadCommands();
+    } catch (e) {
+      toast('重载失败: ' + e.message, false);
+    }
+  });
+  $('cmdTestText').addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      cmdTestText($('cmdTestText').value);
+    }
+  });
+  cmdListEl.addEventListener('click', async e => {
+    const btn = e.target.closest('.cmd-btn');
+    if (!btn) return;
+    const row = e.target.closest('.cmd-item');
+    const id = row && row.dataset.id;
+    const item = cmdItems.find(x => x.id === id);
+    if (!item) return;
+    const act = btn.dataset.act;
+    if (act === 'fill') {
+      $('cmdTestText').value = cmdTextFromItem(item);
+      $('cmdTestText').focus();
+      return;
+    }
+    if (act === 'test') {
+      return cmdTestText(cmdTextFromItem(item));
+    }
+    if (act === 'execute') {
+      return cmdExecuteText(cmdTextFromItem(item), false);
+    }
+    if (act === 'edit') {
+      return cmdOpenEditor(item);
+    }
+    if (act === 'toggle') {
+      try {
+        const res = await fetch(getBaseUrl() + '/commands/' + encodeURIComponent(id), {
+          method: 'PUT',
+          headers: cmdHeaders(),
+          body: JSON.stringify({ enabled: item.enabled === false })
+        });
+        const j = await res.json().catch(() => null);
+        if (!res.ok) throw new Error((j && (j.error_detail || j.message)) || res.status);
+        toast('已更新', true);
+        await loadCommands();
+      } catch (ex) {
+        toast('更新失败: ' + ex.message, false);
+      }
+      return;
+    }
+    if (act === 'delete') {
+      if (!confirm('确定删除命令：' + (item.name || item.id) + '？')) return;
+      try {
+        const res = await fetch(getBaseUrl() + '/commands/' + encodeURIComponent(id), { method: 'DELETE', headers: authHeaders() });
+        const j = await res.json().catch(() => null);
+        if (!res.ok) throw new Error((j && (j.error_detail || j.message)) || res.status);
+        toast('已删除', true);
+        await loadCommands();
+      } catch (ex) {
+        toast('删除失败: ' + ex.message, false);
+      }
+    }
+  });
+  if (cmdPanelEl.checked) loadCommands();
 
   // ===== Fold / Collapse =====
   document.querySelectorAll('.fold-hdr').forEach(hdr => {

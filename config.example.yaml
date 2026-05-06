@@ -23,6 +23,29 @@ auto_paste: true        # 默认是否自动粘贴（true=自动 Ctrl+V, false=�
 history_size: 50        # 历史记录保留条数
 max_content_length: 10240  # 请求体大小上限（字节）
 
+# 命令模式（预定义命令匹配，/ 前缀）
+command_mode_enabled: true
+command_prefix: "/"
+command_file: "commands.yaml"
+gauto_path: "gauto"
+command_require_confirm_risks:
+  - "high"
+
+# Shell 直发模式（: 前缀，如 :notify-send hello）
+shell_enabled: true          # 开启 Shell 直发
+shell_prefix: ":"
+shell_confirm: false         # 直接执行，不需要确认
+shell_danger_patterns:       # 危险命令拦截正则，命中即拒绝
+  - 'rm\s+-[a-z]*r[a-z]*f'
+  - 'rm\s+-[a-z]*f[a-z]*r'
+  - 'mkfs'
+  - 'dd\s+if='
+  - ':\s*\(\s*\)\s*\{'
+  - '>(\s*)\s*/dev/(s?da|nvme|hd)'
+  - 'chmod\s+-[a-z]*R.*777'
+  - 'chown\s+-[a-z]*R.*root'
+  - 'mv\s+.+\s+/dev/null'
+
 # 生产部署（仅 --production 模式下生效）
 workers: 4              # waitress 工作线程数
 log_level: "info"       # 日志级别: debug / info / warning / error

@@ -25,6 +25,21 @@ class AppConfig:
     auto_paste: bool = True
     history_size: int = 50
     max_content_length: int = 10 * 1024  # 10KB
+    command_mode_enabled: bool = True
+    command_prefix: str = "/"
+    command_file: str = ""
+    gauto_path: str = "gauto"
+    command_require_confirm_risks: List[str] = field(default_factory=lambda: ["high"])
+    shell_enabled: bool = True
+    shell_prefix: str = ":"
+    shell_confirm: bool = False
+    shell_danger_patterns: List[str] = field(default_factory=lambda: [
+        r"rm\s+-[a-z]*r[a-z]*f", r"rm\s+-[a-z]*f[a-z]*r",
+        r"mkfs", r"dd\s+if=", r":\s*\(\s*\)\s*\{",
+        r">(\s*)\s*/dev/(s?da|nvme|hd)",
+        r"chmod\s+-[a-z]*R.*777", r"chown\s+-[a-z]*R.*root",
+        r"mv\s+.+\s+/dev/null",
+    ])
 
     # 生产部署
     workers: int = 1
@@ -63,6 +78,14 @@ def load_from_env() -> dict:
         "VOICE_INPUT_AUTO_PASTE": "auto_paste",
         "VOICE_INPUT_HISTORY_SIZE": "history_size",
         "VOICE_INPUT_MAX_CONTENT_LENGTH": "max_content_length",
+        "VOICE_INPUT_COMMAND_MODE_ENABLED": "command_mode_enabled",
+        "VOICE_INPUT_COMMAND_PREFIX": "command_prefix",
+        "VOICE_INPUT_COMMAND_FILE": "command_file",
+        "VOICE_INPUT_GAUTO_PATH": "gauto_path",
+        "VOICE_INPUT_COMMAND_REQUIRE_CONFIRM_RISKS": "command_require_confirm_risks",
+        "VOICE_INPUT_SHELL_ENABLED": "shell_enabled",
+        "VOICE_INPUT_SHELL_PREFIX": "shell_prefix",
+        "VOICE_INPUT_SHELL_CONFIRM": "shell_confirm",
         "VOICE_INPUT_WORKERS": "workers",
         "VOICE_INPUT_LOG_LEVEL": "log_level",
     }
@@ -77,9 +100,9 @@ def load_from_env() -> dict:
 
 def _coerce(key: str, val):
     """将字符串值转为目标类型"""
-    bool_keys = {"require_token", "auto_paste"}
+    bool_keys = {"require_token", "auto_paste", "command_mode_enabled", "shell_enabled", "shell_confirm"}
     int_keys = {"port", "history_size", "max_content_length", "workers"}
-    list_keys = {"allowed_ips"}
+    list_keys = {"allowed_ips", "command_require_confirm_risks", "shell_danger_patterns"}
 
     if key in bool_keys and isinstance(val, str):
         return _parse_bool(val)

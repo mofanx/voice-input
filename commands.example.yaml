@@ -1,0 +1,463 @@
+# 语音输入命令模式 - 命令清单示例
+# 复制为 commands.yaml 后，在 config.yaml 中设置 command_file: "commands.yaml"
+
+commands:
+  - id: app_switch_next
+    name: 切换下一个应用
+    enabled: true
+    category: desktop
+    match:
+      type: keyword
+      patterns:
+        - 切换应用
+        - 下一个应用
+        - 下一个窗口
+        - alt tab
+        - 切到下一个
+    action:
+      type: key
+      key: alt+tab
+    risk: low
+    confirm: false
+
+  - id: app_switch_prev
+    name: 切换上一个应用
+    enabled: true
+    category: desktop
+    match:
+      type: keyword
+      patterns:
+        - 上一个应用
+        - 上一个窗口
+        - 切到上一个
+    action:
+      type: key
+      key: shift+alt+tab
+    risk: low
+    confirm: false
+
+  - id: window_list
+    name: 列出窗口
+    enabled: true
+    category: window
+    match:
+      type: keyword
+      patterns:
+        - 列出窗口
+        - 显示窗口
+        - 查看窗口
+        - 当前窗口列表
+    action:
+      type: gauto
+      args:
+        - list
+    risk: low
+    confirm: false
+
+  - id: window_switch
+    name: 切换窗口
+    enabled: true
+    category: window
+    match:
+      type: regex
+      patterns:
+        - "切换到第?(\\d+)个?窗口"
+        - "切换窗口(\\d+)"
+        - "打开第?(\\d+)个?窗口"
+    action:
+      type: gauto_template
+      template:
+        - switch
+        - "{1}"
+    risk: low
+    confirm: false
+
+  - id: window_activate_by_title
+    name: 激活窗口
+    enabled: true
+    category: window
+    match:
+      type: regex
+      patterns:
+        - "切换到(.+)"
+        - "激活(.+)"
+    action:
+      type: gauto_template
+      template:
+        - activate
+        - "{1}"
+    risk: low
+    confirm: false
+
+  - id: window_close
+    name: 关闭窗口
+    enabled: true
+    category: window
+    match:
+      type: regex
+      patterns:
+        - "关闭窗口(.+)"
+        - "关掉窗口(.+)"
+        - "关闭第?(\\d+)个?窗口"
+    action:
+      type: gauto_template
+      template:
+        - kill
+        - "{1}"
+    risk: medium
+    confirm: true
+
+  - id: app_list
+    name: 列出应用
+    enabled: true
+    category: app
+    match:
+      type: keyword
+      patterns:
+        - 列出应用
+        - 查看应用列表
+        - 应用列表
+    action:
+      type: gauto
+      args:
+        - list-apps
+    risk: low
+    confirm: false
+
+  - id: app_search
+    name: 搜索应用
+    enabled: true
+    category: app
+    match:
+      type: regex
+      patterns:
+        - "搜索应用(.+)"
+        - "查找应用(.+)"
+        - "找应用(.+)"
+    action:
+      type: gauto_template
+      template:
+        - list-apps
+        - --search
+        - "{1}"
+    risk: low
+    confirm: false
+
+  - id: app_launch
+    name: 启动应用
+    enabled: true
+    category: app
+    match:
+      type: regex
+      patterns:
+        - "启动(.+)"
+        - "打开应用(.+)"
+        - "运行(.+)"
+    action:
+      type: gauto_template
+      template:
+        - launch
+        - "{1}"
+    risk: low
+    confirm: false
+
+  - id: open_terminal
+    name: 打开终端
+    enabled: true
+    category: app
+    match:
+      type: keyword
+      patterns:
+        - 打开终端
+        - 启动终端
+        - 打开命令行
+        - terminal
+    action:
+      type: key
+      key: ctrl+alt+t
+    risk: low
+    confirm: false
+
+  - id: system_lock
+    name: 锁屏
+    enabled: true
+    category: system
+    match:
+      type: keyword
+      patterns:
+        - 锁屏
+        - 锁定屏幕
+        - 锁定电脑
+        - 电脑锁屏
+    action:
+      type: platform_shell
+      commands:
+        Linux:
+          - loginctl
+          - lock-session
+        Darwin:
+          - pmset
+          - displaysleepnow
+        Windows:
+          - rundll32.exe
+          - user32.dll,LockWorkStation
+    risk: medium
+    confirm: false
+
+  - id: system_suspend
+    name: 挂起
+    enabled: true
+    category: system
+    match:
+      type: keyword
+      patterns:
+        - 睡眠
+        - 挂起
+        - 电脑睡眠
+        - 让电脑休眠
+    action:
+      type: platform_shell
+      commands:
+        Linux:
+          - systemctl
+          - suspend
+        Darwin:
+          - pmset
+          - sleepnow
+        Windows:
+          - rundll32.exe
+          - powrprof.dll,SetSuspendState
+          - 0,1,0
+    risk: high
+    confirm: true
+
+  - id: system_reboot
+    name: 重启
+    enabled: true
+    category: system
+    match:
+      type: keyword
+      patterns:
+        - 重启
+        - 重启电脑
+        - 重新启动
+    action:
+      type: platform_shell
+      commands:
+        Linux:
+          - systemctl
+          - reboot
+        Darwin:
+          - osascript
+          - -e
+          - tell app "System Events" to restart
+        Windows:
+          - shutdown
+          - /r
+          - /t
+          - "0"
+    risk: high
+    confirm: true
+
+  - id: system_poweroff
+    name: 关机
+    enabled: true
+    category: system
+    match:
+      type: keyword
+      patterns:
+        - 关机
+        - 关闭电脑
+        - 电脑关机
+        - 关掉电脑
+    action:
+      type: platform_shell
+      commands:
+        Linux:
+          - systemctl
+          - poweroff
+        Darwin:
+          - osascript
+          - -e
+          - tell app "System Events" to shut down
+        Windows:
+          - shutdown
+          - /s
+          - /t
+          - "0"
+    risk: high
+    confirm: true
+
+  - id: volume_up
+    name: 音量增大
+    enabled: true
+    category: media
+    match:
+      type: keyword
+      patterns:
+        - 音量增大
+        - 大点声
+        - 声音大一点
+        - 调高音量
+    action:
+      type: platform_shell
+      commands:
+        Linux:
+          - wpctl
+          - set-volume
+          - "@DEFAULT_AUDIO_SINK@"
+          - 5%+
+        Darwin:
+          - osascript
+          - -e
+          - set volume output volume ((output volume of (get volume settings)) + 5)
+        Windows: []
+    risk: low
+    confirm: false
+
+  - id: volume_down
+    name: 音量减小
+    enabled: true
+    category: media
+    match:
+      type: keyword
+      patterns:
+        - 音量减小
+        - 小点声
+        - 声音小一点
+        - 调低音量
+    action:
+      type: platform_shell
+      commands:
+        Linux:
+          - wpctl
+          - set-volume
+          - "@DEFAULT_AUDIO_SINK@"
+          - 5%-
+        Darwin:
+          - osascript
+          - -e
+          - set volume output volume ((output volume of (get volume settings)) - 5)
+        Windows: []
+    risk: low
+    confirm: false
+
+  - id: volume_mute_toggle
+    name: 静音切换
+    enabled: true
+    category: media
+    match:
+      type: keyword
+      patterns:
+        - 静音
+        - 取消静音
+        - 切换静音
+        - 关闭声音
+    action:
+      type: platform_shell
+      commands:
+        Linux:
+          - wpctl
+          - set-mute
+          - "@DEFAULT_AUDIO_SINK@"
+          - toggle
+        Darwin:
+          - osascript
+          - -e
+          - set volume with output muted not (output muted of (get volume settings))
+        Windows: []
+    risk: low
+    confirm: false
+
+  - id: edit_copy
+    name: 复制
+    enabled: true
+    category: edit
+    match:
+      type: keyword
+      patterns:
+        - 复制
+        - 拷贝
+    action:
+      type: key
+      key: ctrl+c
+    risk: low
+    confirm: false
+
+  - id: edit_paste
+    name: 粘贴
+    enabled: true
+    category: edit
+    match:
+      type: keyword
+      patterns:
+        - 粘贴
+        - 贴上
+    action:
+      type: key
+      key: ctrl+v
+    risk: low
+    confirm: false
+
+  - id: edit_save
+    name: 保存
+    enabled: true
+    category: edit
+    match:
+      type: keyword
+      patterns:
+        - 保存
+        - 保存文件
+    action:
+      type: key
+      key: ctrl+s
+    risk: low
+    confirm: false
+
+  - id: browser_new_tab
+    name: 新建标签页
+    enabled: true
+    category: browser
+    match:
+      type: keyword
+      patterns:
+        - 新建标签
+        - 新建标签页
+        - 打开新标签
+    action:
+      type: key
+      key: ctrl+t
+    risk: low
+    confirm: false
+
+  - id: browser_close_tab
+    name: 关闭标签页
+    enabled: true
+    category: browser
+    match:
+      type: keyword
+      patterns:
+        - 关闭标签
+        - 关闭标签页
+        - 关掉标签
+    action:
+      type: key
+      key: ctrl+w
+    risk: medium
+    confirm: false
+
+  - id: browser_refresh
+    name: 刷新页面
+    enabled: true
+    category: browser
+    match:
+      type: keyword
+      patterns:
+        - 刷新
+        - 刷新页面
+        - 重新加载
+    action:
+      type: key
+      key: ctrl+r
+    risk: low
+    confirm: false
