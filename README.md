@@ -2,7 +2,7 @@
 
 将手机端的语音识别结果，通过局域网实时传送到电脑（Windows / Linux / macOS），自动写入剪贴板并可粘贴到当前光标位置。支持任意手机语音输入法（如豆包、讯飞、搜狗、Gboard 等）。
 
-**v2.1.1 新特性**：修复 tmux + sudo 环境下剪贴板操作卡死问题，优化跨目录启动配置解析。
+**v2.2.1 新特性**：新增公网 Relay 转发模式与部署文档，支持华为云桌面等无公网地址场景通过 WebSocket 反连完成手机语音输入。
 
 ## 工作原理
 
@@ -29,8 +29,11 @@
 # 安装基础版（仅复制到剪贴板，不含自动粘贴）
 pip install .
 
-# 安装完整版（含自动粘贴 + 生产部署 + YAML 配置）
+# 安装完整版（含自动粘贴 + 生产部署 + YAML 配置 + Relay）
 pip install ".[all]"
+
+# 仅额外安装公网 Relay 转发依赖
+pip install ".[relay]"
 ```
 
 ### 方式二：直接运行
@@ -82,7 +85,7 @@ voice-input-send "消息" --server http://192.168.1.100:8080 -t $VOICE_INPUT_TOK
 启动后终端会输出：
 ```
 ============================================================
-  跨设备语音输入传输系统 v2.1.1
+  跨设备语音输入传输系统 v2.2.1
 ============================================================
   服务地址:  http://192.168.1.100:8080
   手机页面:  http://192.168.1.100:8080/
@@ -292,6 +295,140 @@ sudo systemctl enable --now voice-input
 sudo systemctl status voice-input
 ```
 
+## 公网 Relay 转发部署
+
+适用于手机和桌面端不在同一局域网、桌面端没有公网地址的场景，例如华为云桌面办公环境。
+
+### 工作架构
+
+```text
+手机页面 -> 公网 Relay 服务 -> WebSocket 反连桌面客户端 -> 本地剪贴板/粘贴/命令模式
+```
+
+公网 Relay 服务只做转发，不执行剪贴板、键盘或 Shell 操作。桌面端主动连接 Relay，因此桌面端不需要公网 IP 或端口映射。
+
+### 公网服务器启动 Relay
+
+```bash
+voice-input-relay --host 0.0.0.0 --port 8090 --token your-relay-token
+```
+
+常用接口：
+
+| 路径 | 方法 | 说明 |
+|---|---|---|
+| `/` | GET | Relay 简化手机页面 |
+| `/health` | GET | 健康检查 |
+| `/relay/health` | GET | Relay 健康检查 |
+| `/relay/devices` | GET | 在线桌面设备列表 |
+| `/relay/input` | POST | 手机端发送文本 |
+| `/relay/ws` | GET | 桌面端 WebSocket 反连 |
+
+### 桌面端反连
+
+独立客户端：
+
+```bash
+voice-input-relay-client \
+  --server https://voice.example.com \
+  --token your-relay-token \
+  --device-id huawei-cloud-desktop
+```
+
+或随主服务启动：
+
+```bash
+voice-input --production \
+  --relay-enabled \
+  --relay-server-url https://voice.example.com \
+  --relay-token your-relay-token \
+  --relay-device-id huawei-cloud-desktop
+```
+
+### 推荐 Nginx 反代配置
+
+建议公网只暴露 HTTPS/WSS，由 Nginx 转发到本机 Relay 服务：
+
+```nginx
+server {
+    listen 80;
+    server_name voice.example.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name voice.example.com;
+
+    ssl_certificate /etc/letsencrypt/live/voice.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/voice.example.com/privkey.pem;
+
+    client_max_body_size 1m;
+
+    location / {
+        proxy_pass http://127.0.0.1:8090;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+}
+```
+
+### 推荐 systemd 配置
+
+创建环境变量文件：
+
+```bash
+sudo install -d -m 755 /etc/voice-input
+sudo tee /etc/voice-input/relay.env >/dev/null <<'EOF'
+VOICE_INPUT_RELAY_TOKEN=your-relay-token
+VOICE_INPUT_RELAY_HOST=127.0.0.1
+VOICE_INPUT_RELAY_PORT=8090
+VOICE_INPUT_RELAY_LOG_LEVEL=info
+EOF
+```
+
+创建 `/etc/systemd/system/voice-input-relay.service`：
+
+```ini
+[Unit]
+Description=voice-input Relay Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/voice-input/relay.env
+ExecStart=/usr/local/bin/voice-input-relay
+Restart=always
+RestartSec=3
+User=www-data
+Group=www-data
+
+[Install]
+WantedBy=multi-user.target
+```
+
+启动：
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now voice-input-relay
+sudo systemctl status voice-input-relay
+```
+
+如果 `voice-input-relay` 不在 `/usr/local/bin`，用下面命令确认实际路径后修改 `ExecStart`：
+
+```bash
+which voice-input-relay
+```
+
 ## API 接口
 
 | 路径 | 方法 | 鉴权 | 说明 |
@@ -478,8 +615,8 @@ pip install build
 python -m build
 
 # 生成的包在 dist/ 目录
-# dist/voice_input-2.1.1-py3-none-any.whl
-# dist/voice_input-2.1.1.tar.gz
+# dist/voice_input-2.2.1-py3-none-any.whl
+# dist/voice_input-2.2.1.tar.gz
 ```
 
 ## 项目结构

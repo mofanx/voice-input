@@ -58,7 +58,7 @@ curl https://voice.example.com/health
 {
   "code": 200,
   "status": "ok",
-  "version": "2.2.0",
+  "version": "2.2.1",
   "online_devices": 1,
   "pending_requests": 0
 }
