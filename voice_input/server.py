@@ -27,6 +27,103 @@ from .utils import get_local_ip, get_client_ip, is_ip_allowed, is_token_valid
 
 _PASTE_DELAY = 0.08  # 剪贴板写入后等待时间（秒），确保 X11 剪贴板同步完成
 _RESTORE_DELAY = 0.15  # 粘贴操作后等待时间（秒），确保目标程序完成读取剪贴板
+_CLIP_TIMEOUT = 2.0
+
+
+def _sudo_user_env() -> tuple[str | None, dict[str, str]]:
+    sudo_user = os.environ.get("SUDO_USER")
+    env = os.environ.copy()
+    if os.getuid() == 0 and sudo_user:
+        try:
+            uid_result = subprocess.run(["id", "-u", sudo_user], capture_output=True, text=True, timeout=1)
+            real_uid = uid_result.stdout.strip()
+            if real_uid:
+                env["XDG_RUNTIME_DIR"] = f"/run/user/{real_uid}"
+                env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path=/run/user/{real_uid}/bus"
+                env.setdefault("WAYLAND_DISPLAY", "wayland-0")
+                env["DISPLAY"] = os.environ.get("DISPLAY") or ":0"
+        except Exception:
+            pass
+    return sudo_user, env
+
+
+def _run_clip_command(args: list[str], input_data: bytes | None = None) -> subprocess.CompletedProcess:
+    sudo_user, env = _sudo_user_env()
+    cmd = args
+    if os.getuid() == 0 and sudo_user:
+        cmd = ["sudo", "-u", sudo_user, "-H", "env"] + [
+            f"XDG_RUNTIME_DIR={env.get('XDG_RUNTIME_DIR', '')}",
+            f"DBUS_SESSION_BUS_ADDRESS={env.get('DBUS_SESSION_BUS_ADDRESS', '')}",
+            f"WAYLAND_DISPLAY={env.get('WAYLAND_DISPLAY', 'wayland-0')}",
+            f"DISPLAY={env.get('DISPLAY', ':0')}",
+        ] + args
+    return subprocess.run(
+        cmd,
+        input=input_data,
+        capture_output=True,
+        timeout=_CLIP_TIMEOUT,
+        env=env,
+    )
+
+
+def _start_clip_command(args: list[str], input_data: bytes):
+    sudo_user, env = _sudo_user_env()
+    cmd = args
+    if os.getuid() == 0 and sudo_user:
+        cmd = ["sudo", "-u", sudo_user, "-H", "env"] + [
+            f"XDG_RUNTIME_DIR={env.get('XDG_RUNTIME_DIR', '')}",
+            f"DBUS_SESSION_BUS_ADDRESS={env.get('DBUS_SESSION_BUS_ADDRESS', '')}",
+            f"WAYLAND_DISPLAY={env.get('WAYLAND_DISPLAY', 'wayland-0')}",
+            f"DISPLAY={env.get('DISPLAY', ':0')}",
+        ] + args
+    proc = subprocess.Popen(
+        cmd,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+        env=env,
+    )
+    try:
+        proc.stdin.write(input_data)
+        proc.stdin.close()
+    except Exception:
+        proc.kill()
+        raise
+
+
+def _copy_clipboard(content: str | bytes):
+    data = content if isinstance(content, bytes) else str(content).encode("utf-8")
+    if platform.system() == "Linux":
+        try:
+            _start_clip_command(["wl-copy"], data)
+            return
+        except Exception as e:
+            logging.warning(f"wl-copy 失败: {e}")
+            raise RuntimeError(f"复制到剪贴板失败: {e}")
+    else:
+        try:
+            import pyclip
+            pyclip.copy(content)
+        except Exception as e:
+            raise RuntimeError(f"复制到剪贴板失败: {e}")
+
+
+def _paste_clipboard() -> bytes | None:
+    if platform.system() == "Linux":
+        try:
+            completed = _run_clip_command(["wl-paste", "-n"])
+            if completed.returncode == 0:
+                return completed.stdout
+            logging.warning(f"wl-paste 失败: {(completed.stderr or b'').decode(errors='ignore').strip()}")
+        except Exception as e:
+            logging.warning(f"wl-paste 失败: {e}")
+        return None
+    try:
+        import pyclip
+        return pyclip.paste()
+    except Exception:
+        return None
 
 
 def _do_keyboard_action(action: str, text: str, press_enter: bool = False):
@@ -66,11 +163,7 @@ def _do_keyboard_action(action: str, text: str, press_enter: bool = False):
 
 def _save_clipboard() -> bytes | None:
     """保存当前剪贴板内容，失败返回 None"""
-    try:
-        import pyclip
-        return pyclip.paste()
-    except Exception:
-        return None
+    return _paste_clipboard()
 
 
 def _restore_clipboard(old_content: bytes | None):
@@ -78,9 +171,8 @@ def _restore_clipboard(old_content: bytes | None):
     if old_content is None:
         return
     try:
-        import pyclip
         time.sleep(_RESTORE_DELAY)
-        pyclip.copy(old_content)
+        _copy_clipboard(old_content)
         logging.info("已恢复原有剪贴板内容")
     except Exception as e:
         logging.warning(f"恢复剪贴板失败: {e}")
@@ -332,7 +424,6 @@ def create_app(config: AppConfig) -> Flask:
     # 因此在启动时做一次空按键，等待设备就绪后再提供服务。
     try:
         import pyclip
-        pyclip.paste()  # 预热剪贴板后端
         logging.info("pyclip 模块已预热")
     except Exception:
         pass
@@ -646,13 +737,11 @@ def create_app(config: AppConfig) -> Flask:
 
         # 7. 执行剪贴板和键盘操作
         try:
-            import pyclip
-
             # 仅在需要恢复且不是"仅复制"模式时保存原剪贴板
             need_restore = restore_clipboard and action != "copy"
             old_clipboard = _save_clipboard() if need_restore else None
 
-            pyclip.copy(text)
+            _copy_clipboard(text)
 
             app.history_store.append({
                 "server_time": current_time,
