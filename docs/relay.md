@@ -40,9 +40,29 @@ voice-input-relay --host 0.0.0.0 --port 8090
 公网接口：
 
 - `GET /`：简化手机页面
+- `GET /health`：健康检查
+- `GET /relay/health`：Relay 健康检查
 - `GET /relay/devices`：查看在线桌面设备
 - `POST /relay/input`：发送文本
 - `GET /relay/ws`：桌面端 WebSocket 反连
+
+健康检查示例：
+
+```bash
+curl https://voice.example.com/health
+```
+
+返回示例：
+
+```json
+{
+  "code": 200,
+  "status": "ok",
+  "version": "2.2.0",
+  "online_devices": 1,
+  "pending_requests": 0
+}
+```
 
 ## 桌面端反连
 
@@ -104,6 +124,86 @@ location / {
     proxy_set_header Connection "upgrade";
 }
 ```
+
+## Ubuntu VPS systemd 示例
+
+创建环境变量文件：
+
+```bash
+sudo install -d -m 755 /etc/voice-input
+sudo tee /etc/voice-input/relay.env >/dev/null <<'EOF'
+VOICE_INPUT_RELAY_TOKEN=your-relay-token
+VOICE_INPUT_RELAY_HOST=127.0.0.1
+VOICE_INPUT_RELAY_PORT=8090
+VOICE_INPUT_RELAY_LOG_LEVEL=info
+EOF
+```
+
+创建服务文件：
+
+```bash
+sudo tee /etc/systemd/system/voice-input-relay.service >/dev/null <<'EOF'
+[Unit]
+Description=voice-input Relay Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/voice-input/relay.env
+ExecStart=/usr/local/bin/voice-input-relay
+Restart=always
+RestartSec=3
+User=www-data
+Group=www-data
+
+[Install]
+WantedBy=multi-user.target
+EOF
+```
+
+启动：
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now voice-input-relay
+sudo systemctl status voice-input-relay
+```
+
+如果 `voice-input-relay` 不在 `/usr/local/bin`，先确认路径：
+
+```bash
+which voice-input-relay
+```
+
+然后修改 `ExecStart`。
+
+## Termux 示例
+
+安装：
+
+```bash
+pkg update
+pkg install python
+pip install "voice-input[relay]"
+```
+
+启动：
+
+```bash
+export VOICE_INPUT_RELAY_TOKEN="your-relay-token"
+voice-input-relay --host 0.0.0.0 --port 8090
+```
+
+若希望保持后台运行，可使用 `tmux`：
+
+```bash
+pkg install tmux
+tmux new -s voice-relay
+voice-input-relay --host 0.0.0.0 --port 8090 --token your-relay-token
+```
+
+Termux 设备通常仍需要路由器端口映射或上层公网入口；如果没有公网入口，更适合作为临时中转或配合内网穿透服务使用。
 
 ## 认证
 

@@ -39,8 +39,8 @@ INDEX_HTML = """<!doctype html>
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;background:#f5f5f7;color:#1d1d1f}.wrap{max-width:680px;margin:0 auto;padding:20px}.card{background:#fff;border:1px solid #e5e5ea;border-radius:18px;padding:18px;margin:14px 0;box-shadow:0 8px 30px rgba(0,0,0,.06)}h1{font-size:24px;margin:8px 0 4px}label{font-size:13px;color:#666;display:block;margin:12px 0 6px}input,select,textarea,button{box-sizing:border-box;width:100%;font-size:16px;border-radius:12px;border:1px solid #d1d1d6;padding:12px}textarea{min-height:180px;resize:vertical}button{background:#007aff;color:#fff;border:0;font-weight:700;margin-top:14px}.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.hint{font-size:12px;color:#777;line-height:1.5}.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#222;color:#fff;padding:10px 14px;border-radius:999px;display:none}.toast.show{display:block}
 </style>
 </head>
-<body><div class="wrap"><h1>voice-input Relay</h1><div class="hint">公网中转页面，只负责把文本转发到已连接的桌面客户端。</div><div class="card"><label>Relay Token</label><input id="token" type="password" autocomplete="off"><label>目标设备 ID（单设备可留空）</label><input id="target" autocomplete="off" placeholder="huawei-cloud-desktop"><div class="row"><div><label>动作</label><select id="action"><option value="paste_terminal">paste_terminal</option><option value="paste">paste</option><option value="paste_enter">paste_enter</option><option value="copy">copy</option></select></div><div><label>恢复剪贴板</label><select id="restore"><option value="true">是</option><option value="false">否</option></select></div></div><label>文本</label><textarea id="text" placeholder="在手机上使用语音输入法输入..."></textarea><button id="send">发送到电脑</button></div><div class="card"><button id="refresh">刷新在线设备</button><pre id="devices" class="hint"></pre></div></div><div class="toast" id="toast"></div><script>
-const $=id=>document.getElementById(id);const LS=k=>localStorage.getItem('vi_relay_'+k)||'';const SET=(k,v)=>localStorage.setItem('vi_relay_'+k,v);['token','target','action','restore'].forEach(id=>{$(id).value=LS(id)||$(id).value;$(id).addEventListener('input',()=>SET(id,$(id).value));});function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200)}async function devices(){const r=await fetch('/relay/devices',{headers:{'X-Relay-Token':$('token').value}});$('devices').textContent=JSON.stringify(await r.json(),null,2)}$('refresh').onclick=()=>devices().catch(e=>toast(e.message));$('send').onclick=async()=>{const b=$('send');b.disabled=true;b.textContent='发送中...';try{const payload={text:$('text').value,target_device_id:$('target').value,action:$('action').value,restore_clipboard:$('restore').value==='true',device_id:'phone_relay_web',timestamp:Date.now()};const r=await fetch('/relay/input',{method:'POST',headers:{'Content-Type':'application/json','X-Relay-Token':$('token').value},body:JSON.stringify(payload)});const j=await r.json().catch(()=>null);if(r.ok){toast('发送成功');$('text').value=''}else toast('失败: '+(j&&j.message?j.message:r.status))}catch(e){toast('网络错误: '+e.message)}finally{b.disabled=false;b.textContent='发送到电脑'}};devices().catch(()=>{});
+<body><div class="wrap"><h1>voice-input Relay</h1><div class="hint">公网中转页面，只负责把文本转发到已连接的桌面客户端。</div><div class="card"><label>Relay Token</label><input id="token" type="password" autocomplete="off"><label>在线设备</label><select id="deviceSelect"><option value="">自动选择在线设备</option></select><label>目标设备 ID（单设备可留空）</label><input id="target" autocomplete="off" placeholder="huawei-cloud-desktop"><div class="row"><div><label>动作</label><select id="action"><option value="paste_terminal">paste_terminal</option><option value="paste">paste</option><option value="paste_enter">paste_enter</option><option value="copy">copy</option></select></div><div><label>恢复剪贴板</label><select id="restore"><option value="true">是</option><option value="false">否</option></select></div></div><label>文本</label><textarea id="text" placeholder="在手机上使用语音输入法输入..."></textarea><button id="send">发送到电脑</button></div><div class="card"><button id="refresh">刷新在线设备</button><pre id="devices" class="hint"></pre></div></div><div class="toast" id="toast"></div><script>
+const $=id=>document.getElementById(id);const LS=k=>localStorage.getItem('vi_relay_'+k)||'';const SET=(k,v)=>localStorage.setItem('vi_relay_'+k,v);['token','target','action','restore'].forEach(id=>{$(id).value=LS(id)||$(id).value;$(id).addEventListener('input',()=>SET(id,$(id).value));});$('deviceSelect').addEventListener('change',()=>{$('target').value=$('deviceSelect').value;SET('target',$('target').value)});function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2200)}function fillDevices(j){const ids=Array.isArray(j.device_ids)?j.device_ids:(Array.isArray(j.devices)?j.devices.map(d=>typeof d==='string'?d:d.device_id).filter(Boolean):[]);const s=$('deviceSelect');const cur=$('target').value;s.innerHTML='<option value="">自动选择在线设备</option>';ids.forEach(id=>{const o=document.createElement('option');o.value=id;o.textContent=id;s.appendChild(o)});if(cur&&ids.includes(cur))s.value=cur;else if(!cur&&ids.length===1){s.value=ids[0];$('target').value=ids[0];SET('target',ids[0])}}async function devices(){const r=await fetch('/relay/devices',{headers:{'X-Relay-Token':$('token').value}});const j=await r.json();fillDevices(j);$('devices').textContent=JSON.stringify(j,null,2)}$('refresh').onclick=()=>devices().catch(e=>toast(e.message));$('send').onclick=async()=>{const b=$('send');b.disabled=true;b.textContent='发送中...';try{const payload={text:$('text').value,target_device_id:$('target').value,action:$('action').value,restore_clipboard:$('restore').value==='true',device_id:'phone_relay_web',timestamp:Date.now()};const r=await fetch('/relay/input',{method:'POST',headers:{'Content-Type':'application/json','X-Relay-Token':$('token').value},body:JSON.stringify(payload)});const j=await r.json().catch(()=>null);if(r.ok){toast('发送成功');$('text').value=''}else toast('失败: '+(j&&j.message?j.message:r.status))}catch(e){toast('网络错误: '+e.message)}finally{b.disabled=false;b.textContent='发送到电脑'}};devices().catch(()=>{});
 </script></body></html>"""
 
 
@@ -64,6 +64,18 @@ async def index(request):
     return web.Response(text=INDEX_HTML, content_type="text/html")
 
 
+async def health_handler(request):
+    state: RelayState = request.app["state"]
+    return await _json_response({
+        "code": 200,
+        "status": "ok",
+        "version": __version__,
+        "online_devices": len(state.devices),
+        "pending_requests": len(state.pending),
+        "server_time": now_ms(),
+    })
+
+
 async def options_handler(request):
     return web.Response(headers={
         "Access-Control-Allow-Origin": "*",
@@ -76,7 +88,8 @@ async def devices_handler(request):
     state: RelayState = request.app["state"]
     if not _require_auth(request, state):
         return await _json_response({"code": 401, "message": "Unauthorized"}, 401)
-    return await _json_response({"code": 200, "devices": sorted(state.devices.keys())})
+    devices = [{"device_id": device_id, "online": True} for device_id in sorted(state.devices.keys())]
+    return await _json_response({"code": 200, "devices": devices, "device_ids": [d["device_id"] for d in devices]})
 
 
 async def input_handler(request):
@@ -178,6 +191,8 @@ def create_relay_app(token: str, timeout: float = DEFAULT_RELAY_TIMEOUT):
     app = web.Application(client_max_size=1024 * 1024)
     app["state"] = RelayState(token=token, timeout=timeout)
     app.router.add_get("/", index)
+    app.router.add_get("/health", health_handler)
+    app.router.add_get("/relay/health", health_handler)
     app.router.add_get("/relay/devices", devices_handler)
     app.router.add_options("/relay/devices", options_handler)
     app.router.add_post("/relay/input", input_handler)

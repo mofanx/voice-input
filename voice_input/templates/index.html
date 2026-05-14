@@ -583,6 +583,9 @@
       placeholder="Token（未设置则留空）" autocomplete="off">
     <input class="conn-input" id="relayTarget" type="text"
       placeholder="Relay 目标设备 ID（单设备可留空）" autocomplete="off" spellcheck="false">
+    <select class="conn-input" id="relayDeviceSelect">
+      <option value="">自动选择在线设备</option>
+    </select>
     <div class="conn-hint" id="connHint">当前连接：<span id="connAddr"></span></div>
   </div>
 </div>
@@ -925,19 +928,43 @@
   const serverUrlEl = $('serverUrl');
   const tokenEl = $('token');
   const relayTargetEl = $('relayTarget');
+  const relayDeviceSelectEl = $('relayDeviceSelect');
 
   connModeEl.value = getConnMode();
   serverUrlEl.value = LS('serverUrl') || '';
   tokenEl.value = LS('token') || '';
   relayTargetEl.value = LS('relayTarget') || '';
+  relayDeviceSelectEl.value = relayTargetEl.value;
 
   function updateConnHint() {
     const addr = getBaseUrl() || window.location.origin;
     $('connAddr').textContent = (getConnMode() === 'relay' ? 'Relay ' : '') + addr;
     $('serverInfo').textContent = addr.replace(/^https?:\/\//, '');
     relayTargetEl.style.display = getConnMode() === 'relay' ? 'block' : 'none';
+    relayDeviceSelectEl.style.display = getConnMode() === 'relay' ? 'block' : 'none';
   }
   updateConnHint();
+
+  function updateRelayDevices(data) {
+    if (getConnMode() !== 'relay' || !data) return;
+    const ids = Array.isArray(data.device_ids)
+      ? data.device_ids
+      : (Array.isArray(data.devices) ? data.devices.map(d => typeof d === 'string' ? d : d.device_id).filter(Boolean) : []);
+    const current = relayTargetEl.value.trim();
+    relayDeviceSelectEl.innerHTML = '<option value="">自动选择在线设备</option>';
+    ids.forEach(id => {
+      const opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = id;
+      relayDeviceSelectEl.appendChild(opt);
+    });
+    if (current && ids.includes(current)) relayDeviceSelectEl.value = current;
+    else if (!current && ids.length === 1) {
+      relayDeviceSelectEl.value = ids[0];
+      relayTargetEl.value = ids[0];
+      LS_SET('relayTarget', ids[0]);
+    }
+  }
 
   async function checkConnection() {
     const badge = $('connBadge');
@@ -951,9 +978,13 @@
         headers: getConnMode() === 'relay' ? authHeaders() : {}
       });
       clearTimeout(tid);
+      const data = getConnMode() === 'relay' ? await res.clone().json().catch(() => null) : null;
       if (res.ok) {
         badge.className = 'conn-badge ok';
-        badge.title = '已连接';
+        updateRelayDevices(data);
+        badge.title = getConnMode() === 'relay' && data && data.device_ids
+          ? '已连接，在线设备: ' + data.device_ids.length
+          : '已连接';
       } else {
         badge.className = 'conn-badge err';
         badge.title = '连接失败: ' + res.status;
@@ -976,6 +1007,10 @@
   });
   tokenEl.addEventListener('input', () => LS_SET('token', tokenEl.value));
   relayTargetEl.addEventListener('input', () => LS_SET('relayTarget', relayTargetEl.value.trim()));
+  relayDeviceSelectEl.addEventListener('change', () => {
+    relayTargetEl.value = relayDeviceSelectEl.value;
+    LS_SET('relayTarget', relayTargetEl.value.trim());
+  });
 
   // Check connection on load
   checkConnection();
