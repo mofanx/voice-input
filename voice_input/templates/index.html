@@ -573,10 +573,16 @@
     <span class="fold-arrow">▾</span>
   </div>
   <div class="fold-body" id="connBody">
+    <select class="conn-input" id="connMode">
+      <option value="local">本地直连</option>
+      <option value="relay">公网转发 Relay</option>
+    </select>
     <input class="conn-input" id="serverUrl" type="url"
       placeholder="服务器地址（留空则使用当前）" autocomplete="off" spellcheck="false">
     <input class="conn-input" id="token" type="password"
       placeholder="Token（未设置则留空）" autocomplete="off">
+    <input class="conn-input" id="relayTarget" type="text"
+      placeholder="Relay 目标设备 ID（单设备可留空）" autocomplete="off" spellcheck="false">
     <div class="conn-hint" id="connHint">当前连接：<span id="connAddr"></span></div>
   </div>
 </div>
@@ -908,17 +914,28 @@
   function getBaseUrl() {
     return (LS('serverUrl') || '').trim().replace(/\/$/, '');
   }
+  function getConnMode() {
+    return (LS('connMode') || 'local');
+  }
+  function getInputEndpoint() {
+    return (getBaseUrl() || window.location.origin) + (getConnMode() === 'relay' ? '/relay/input' : '/input');
+  }
 
+  const connModeEl = $('connMode');
   const serverUrlEl = $('serverUrl');
   const tokenEl = $('token');
+  const relayTargetEl = $('relayTarget');
 
+  connModeEl.value = getConnMode();
   serverUrlEl.value = LS('serverUrl') || '';
   tokenEl.value = LS('token') || '';
+  relayTargetEl.value = LS('relayTarget') || '';
 
   function updateConnHint() {
     const addr = getBaseUrl() || window.location.origin;
-    $('connAddr').textContent = addr;
+    $('connAddr').textContent = (getConnMode() === 'relay' ? 'Relay ' : '') + addr;
     $('serverInfo').textContent = addr.replace(/^https?:\/\//, '');
+    relayTargetEl.style.display = getConnMode() === 'relay' ? 'block' : 'none';
   }
   updateConnHint();
 
@@ -929,7 +946,10 @@
     try {
       const ctrl = new AbortController();
       const tid = setTimeout(() => ctrl.abort(), 4000);
-      const res = await fetch(getBaseUrl() + '/status', { signal: ctrl.signal });
+      const res = await fetch((getBaseUrl() || window.location.origin) + (getConnMode() === 'relay' ? '/relay/devices' : '/status'), {
+        signal: ctrl.signal,
+        headers: getConnMode() === 'relay' ? authHeaders() : {}
+      });
       clearTimeout(tid);
       if (res.ok) {
         badge.className = 'conn-badge ok';
@@ -944,12 +964,18 @@
     }
   }
 
+  connModeEl.addEventListener('change', () => {
+    LS_SET('connMode', connModeEl.value);
+    updateConnHint();
+    checkConnection();
+  });
   serverUrlEl.addEventListener('change', () => {
     LS_SET('serverUrl', serverUrlEl.value.trim());
     updateConnHint();
     checkConnection();
   });
   tokenEl.addEventListener('input', () => LS_SET('token', tokenEl.value));
+  relayTargetEl.addEventListener('input', () => LS_SET('relayTarget', relayTargetEl.value.trim()));
 
   // Check connection on load
   checkConnection();
@@ -1114,6 +1140,9 @@
     const payload = { text, timestamp: Date.now(), device_id: 'phone_web', action,
       restore_clipboard: (action !== 'copy' && restoreClipEl.checked),
       press_enter: (action !== 'copy' && pressEnterEl.checked) };
+    if (getConnMode() === 'relay' && relayTargetEl.value.trim()) {
+      payload.target_device_id = relayTargetEl.value.trim();
+    }
     const headers = Object.assign({'Content-Type': 'application/json'}, authHeaders());
 
     sending = true;
@@ -1121,14 +1150,14 @@
     $('send').textContent = '发送中...';
 
     try {
-      const res = await fetch(getBaseUrl() + '/input', { method: 'POST', headers, body: JSON.stringify(payload) });
+      const res = await fetch(getInputEndpoint(), { method: 'POST', headers, body: JSON.stringify(payload) });
       const j = await res.json().catch(() => null);
       if (res.status === 202 && j && j.requires_confirmation) {
         const isShell = j.action === 'shell';
         const label = isShell ? ('Shell 命令：「' + (j.cmd || '') + '」') : ('高风险命令：「' + (j.command_name || j.command_id || '未知命令') + '」');
         if (confirm(label + '，确认执行？')) {
           payload.confirmed = true;
-          const res2 = await fetch(getBaseUrl() + '/input', { method: 'POST', headers, body: JSON.stringify(payload) });
+          const res2 = await fetch(getInputEndpoint(), { method: 'POST', headers, body: JSON.stringify(payload) });
           const j2 = await res2.json().catch(() => null);
           if (res2.ok) {
             toast(isShell ? 'Shell 已执行' : '命令已执行', true);
@@ -1162,7 +1191,10 @@
   // ===== Auth helper =====
   function authHeaders() {
     const h = {};
-    if (tokenEl && tokenEl.value.trim()) h['X-Auth-Token'] = tokenEl.value.trim();
+    if (tokenEl && tokenEl.value.trim()) {
+      if (getConnMode() === 'relay') h['X-Relay-Token'] = tokenEl.value.trim();
+      else h['X-Auth-Token'] = tokenEl.value.trim();
+    }
     return h;
   }
 

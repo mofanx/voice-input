@@ -47,6 +47,14 @@ class AppConfig:
     # 持久化
     db_path: str = ""
 
+    # 公网 Relay 转发
+    relay_enabled: bool = False
+    relay_server_url: str = ""
+    relay_token: str = ""
+    relay_device_id: str = ""
+    relay_reconnect_interval: float = 3.0
+    relay_verify_tls: bool = True
+
     # 生产部署
     workers: int = 1
     log_level: str = "info"
@@ -93,6 +101,12 @@ def load_from_env() -> dict:
         "VOICE_INPUT_SHELL_PREFIX": "shell_prefix",
         "VOICE_INPUT_SHELL_CONFIRM": "shell_confirm",
         "VOICE_INPUT_DB_PATH": "db_path",
+        "VOICE_INPUT_RELAY_ENABLED": "relay_enabled",
+        "VOICE_INPUT_RELAY_SERVER_URL": "relay_server_url",
+        "VOICE_INPUT_RELAY_TOKEN": "relay_token",
+        "VOICE_INPUT_RELAY_DEVICE_ID": "relay_device_id",
+        "VOICE_INPUT_RELAY_RECONNECT_INTERVAL": "relay_reconnect_interval",
+        "VOICE_INPUT_RELAY_VERIFY_TLS": "relay_verify_tls",
         "VOICE_INPUT_WORKERS": "workers",
         "VOICE_INPUT_LOG_LEVEL": "log_level",
     }
@@ -107,14 +121,17 @@ def load_from_env() -> dict:
 
 def _coerce(key: str, val):
     """将字符串值转为目标类型"""
-    bool_keys = {"require_token", "auto_paste", "command_mode_enabled", "shell_enabled", "shell_confirm"}
+    bool_keys = {"require_token", "auto_paste", "command_mode_enabled", "shell_enabled", "shell_confirm", "relay_enabled", "relay_verify_tls"}
     int_keys = {"port", "history_size", "max_content_length", "workers"}
+    float_keys = {"relay_reconnect_interval"}
     list_keys = {"allowed_ips", "command_require_confirm_risks", "shell_danger_patterns"}
 
     if key in bool_keys and isinstance(val, str):
         return _parse_bool(val)
     if key in int_keys and isinstance(val, str):
         return int(val)
+    if key in float_keys and isinstance(val, str):
+        return float(val)
     if key in list_keys and isinstance(val, str):
         return [s.strip() for s in val.split(",") if s.strip()]
     return val

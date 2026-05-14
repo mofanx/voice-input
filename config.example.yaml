@@ -46,6 +46,14 @@ shell_danger_patterns:       # 危险命令拦截正则，命中即拒绝
   - 'chown\s+-[a-z]*R.*root'
   - 'mv\s+.+\s+/dev/null'
 
+# 公网 Relay 转发（云桌面无公网地址时启用）
+relay_enabled: false
+relay_server_url: ""         # 例如 https://voice.example.com
+relay_token: ""              # 与公网 Relay 服务 token 保持一致
+relay_device_id: ""          # 留空时自动使用主机名
+relay_reconnect_interval: 3.0
+relay_verify_tls: true
+
 # 生产部署（仅 --production 模式下生效）
 workers: 4              # waitress 工作线程数
 log_level: "info"       # 日志级别: debug / info / warning / error

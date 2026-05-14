@@ -582,47 +582,17 @@ def create_app(config: AppConfig) -> Flask:
                 },
             )
 
-    @app.route("/input", methods=["POST"])
-    def handle_input():
+    def process_input_payload(data: dict, client_ip: str = "relay"):
         cfg = app.voice_config
 
-        # 1. IP + Token 认证
-        auth_err = _check_auth()
-        if auth_err:
-            return auth_err
-        client_ip = get_client_ip(request)
-
-        # 2. JSON 解析
-        try:
-            data = request.get_json(force=True)
-        except Exception as e:
-            logging.error(f"JSON解析失败: {e}")
-            return (
-                jsonify(
-                    {
-                        "code": 400,
-                        "message": "Invalid JSON format",
-                        "error_detail": "Request body must be valid JSON",
-                    }
-                ),
-                400,
-            )
-
-        # 3. 必需字段
         if not data or "text" not in data:
             logging.error("缺少必需字段 'text'")
-            return (
-                jsonify(
-                    {
-                        "code": 400,
-                        "message": "Missing required field: text",
-                        "error_detail": 'The "text" field is required',
-                    }
-                ),
-                400,
-            )
+            return {
+                "code": 400,
+                "message": "Missing required field: text",
+                "error_detail": 'The "text" field is required',
+            }, 400
 
-        # 5. 解析字段
         text = str(data["text"])
         timestamp = data.get("timestamp", int(time.time() * 1000))
         device_id = data.get("device_id", "unknown")
@@ -657,8 +627,8 @@ def create_app(config: AppConfig) -> Flask:
 
         if _run_shell:
             if not _shell_cmd.strip():
-                return jsonify({"code": 400, "message": "Shell command is empty",
-                                "server_time": current_time, "action": "shell", "device_id": device_id}), 400
+                return {"code": 400, "message": "Shell command is empty",
+                        "server_time": current_time, "action": "shell", "device_id": device_id}, 400
             shell_res = exec_shell_command(
                 _shell_cmd,
                 danger_patterns=cfg.shell_danger_patterns,
@@ -670,16 +640,16 @@ def create_app(config: AppConfig) -> Flask:
             if shell_res.dangerous:
                 payload["code"] = 403
                 payload["message"] = "Dangerous command blocked"
-                return jsonify(payload), 403
+                return payload, 403
             if shell_res.requires_confirmation:
                 payload["code"] = 202
                 payload["message"] = "Shell command requires confirmation"
-                return jsonify(payload), 202
+                return payload, 202
             if shell_res.error:
                 payload["code"] = 500
                 payload["message"] = "Shell execution failed"
                 _push_exec_message(_shell_cmd, "", shell_res.error, "shell")
-                return jsonify(payload), 500
+                return payload, 500
             payload["code"] = 200
             payload["message"] = "success"
             _push_exec_message(_shell_cmd, shell_res.output, "", "shell")
@@ -691,7 +661,7 @@ def create_app(config: AppConfig) -> Flask:
                 "text": text,
                 "command_id": None,
             })
-            return jsonify(payload)
+            return payload, 200
 
         if _run_command:
             result = app.command_engine.execute(_command_text, confirmed=confirmed)
@@ -706,21 +676,21 @@ def create_app(config: AppConfig) -> Flask:
             if result.requires_confirmation:
                 payload["code"] = 202
                 payload["message"] = "Command requires confirmation"
-                return jsonify(payload), 202
+                return payload, 202
             if result.error:
                 _push_exec_message(
                     payload.get("command_name") or payload.get("command_id") or _command_text,
                     "", result.error, "command"
                 )
-                return jsonify(payload), 500
+                return payload, 500
             if not result.matched:
-                return jsonify({
+                return {
                     "code": 404,
                     "message": "Command not matched",
                     "server_time": current_time,
                     "action": "command",
                     "device_id": device_id,
-                }), 404
+                }, 404
             app.history_store.append({
                 "server_time": current_time,
                 "client_ip": client_ip,
@@ -733,11 +703,9 @@ def create_app(config: AppConfig) -> Flask:
                 payload.get("command_name") or payload.get("command_id") or _command_text,
                 result.output, "", "command"
             )
-            return jsonify(payload)
+            return payload, 200
 
-        # 7. 执行剪贴板和键盘操作
         try:
-            # 仅在需要恢复且不是"仅复制"模式时保存原剪贴板
             need_restore = restore_clipboard and action != "copy"
             old_clipboard = _save_clipboard() if need_restore else None
 
@@ -763,30 +731,44 @@ def create_app(config: AppConfig) -> Flask:
             if need_restore:
                 _restore_clipboard(old_clipboard)
 
-            return jsonify(
-                {
-                    "code": 200,
-                    "message": "success",
-                    "server_time": current_time,
-                    "processed_text_length": len(text),
-                    "action": action,
-                    "device_id": device_id,
-                    "clipboard_restored": need_restore,
-                }
-            )
+            return {
+                "code": 200,
+                "message": "success",
+                "server_time": current_time,
+                "processed_text_length": len(text),
+                "action": action,
+                "device_id": device_id,
+                "clipboard_restored": need_restore,
+            }, 200
 
         except Exception as e:
             logging.error(f"服务器内部错误: {e}")
-            return (
-                jsonify(
-                    {
-                        "code": 500,
-                        "message": "Internal server error",
-                        "error_detail": str(e),
-                    }
-                ),
-                500,
-            )
+            return {
+                "code": 500,
+                "message": "Internal server error",
+                "error_detail": str(e),
+            }, 500
+
+    app.process_input_payload = process_input_payload
+
+    @app.route("/input", methods=["POST"])
+    def handle_input():
+        auth_err = _check_auth()
+        if auth_err:
+            return auth_err
+
+        try:
+            data = request.get_json(force=True)
+        except Exception as e:
+            logging.error(f"JSON解析失败: {e}")
+            return jsonify({
+                "code": 400,
+                "message": "Invalid JSON format",
+                "error_detail": "Request body must be valid JSON",
+            }), 400
+
+        payload, status = app.process_input_payload(data, client_ip=get_client_ip(request))
+        return jsonify(payload), status
 
     # ==================== Shell Direct API ====================
 

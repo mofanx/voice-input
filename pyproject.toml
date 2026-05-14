@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "voice-input"
-version = "2.1.1"
+version = "2.2.0"
 description = "跨设备语音输入传输系统 - 将手机端语音识别文本传送到电脑"
 readme = "README.md"
 license = {text = "MIT"}
@@ -35,11 +35,14 @@ dependencies = [
 [project.optional-dependencies]
 production = ["waitress>=2.1"]
 config = ["pyyaml>=6.0"]
-all = ["waitress>=2.1", "pyyaml>=6.0"]
+relay = ["aiohttp>=3.9"]
+all = ["waitress>=2.1", "pyyaml>=6.0", "aiohttp>=3.9"]
 
 [project.scripts]
 voice-input = "voice_input.cli:main"
 voice-input-send = "voice_input.send:main"
+voice-input-relay = "voice_input.relay_server:main"
+voice-input-relay-client = "voice_input.relay_client:main"
 
 [project.urls]
 Homepage = "https://github.com/mofanx/voice-input"
