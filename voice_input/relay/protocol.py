@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import time
 import uuid
+import hmac
+import hashlib
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
@@ -43,6 +45,12 @@ def now_ms() -> int:
 
 def new_request_id() -> str:
     return "req_" + uuid.uuid4().hex
+
+
+def derive_agent_token(token: str) -> str:
+    if not token:
+        return ""
+    return hmac.new(token.encode("utf-8"), b"voice-input-relay-agent-v1", hashlib.sha256).hexdigest()
 
 
 def hello_message(device_id: str, token: str, local_base_url: str, capabilities: Optional[list] = None) -> Dict[str, Any]:

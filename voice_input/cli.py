@@ -1,9 +1,12 @@
 """命令行入口 - 支持参数与配置文件"""
 
 import argparse
+import asyncio
 import logging
 import platform
 import sys
+import threading
+from argparse import Namespace
 
 from . import __version__
 from .config import build_config, find_config_file, init_user_config
@@ -48,6 +51,14 @@ def parse_args(argv=None):
     )
     beh.add_argument("--history-size", type=int, metavar="N", help="历史记录条数 (默认 50)")
 
+    relay = p.add_argument_group("Relay")
+    relay.add_argument("--relay", metavar="URL", help="Relay WebSocket 地址；设置后自动启动内置 Agent")
+    relay.add_argument("--relay-token", metavar="TOKEN", help="Agent 连接 Relay 使用的 token；默认由 --token 派生")
+    relay.add_argument("--relay-device", metavar="ID", help="Relay 设备 ID (默认 default)")
+    relay.add_argument("--relay-local", metavar="URL", help="本地 voice-input 地址；默认按 host/port 自动生成")
+    relay.add_argument("--relay-timeout", type=float, metavar="SECONDS", help="Relay 本地请求超时时间")
+    relay.add_argument("--relay-reconnect", type=float, metavar="SECONDS", help="Relay 断线重连间隔")
+
     # 生产
     prod = p.add_argument_group("生产部署")
     prod.add_argument(
@@ -85,6 +96,18 @@ def main(argv=None):
         cli_dict["auto_paste"] = False
     if args.history_size is not None:
         cli_dict["history_size"] = args.history_size
+    if args.relay is not None:
+        cli_dict["relay"] = args.relay
+    if args.relay_token is not None:
+        cli_dict["relay_token"] = args.relay_token
+    if args.relay_device is not None:
+        cli_dict["relay_device"] = args.relay_device
+    if args.relay_local is not None:
+        cli_dict["relay_local"] = args.relay_local
+    if args.relay_timeout is not None:
+        cli_dict["relay_timeout"] = args.relay_timeout
+    if args.relay_reconnect is not None:
+        cli_dict["relay_reconnect"] = args.relay_reconnect
     if args.workers is not None:
         cli_dict["workers"] = args.workers
     if args.log_level is not None:
@@ -118,6 +141,7 @@ def main(argv=None):
     from .server import create_app
 
     app = create_app(cfg)
+    _start_embedded_relay_agent(cfg)
 
     # 打印启动信息
     local_ip = get_local_ip()
@@ -159,7 +183,7 @@ def _run_production(app, cfg):
 
         workers = cfg.workers if cfg.workers > 1 else 4
         print(f"  [waitress] threads={workers}")
-        serve(app, host=cfg.host, port=cfg.port, threads=workers)
+        serve(app, host=cfg.host, port=cfg.port, threads=cfg.workers)
     except ImportError:
         print(
             "waitress 未安装，回退到 Flask 开发服务器。\n"
@@ -167,6 +191,66 @@ def _run_production(app, cfg):
             file=sys.stderr,
         )
         app.run(host=cfg.host, port=cfg.port, debug=False)
+
+
+def _local_agent_url(cfg) -> str:
+    if cfg.relay_local:
+        return cfg.relay_local
+    host = cfg.host
+    if host in {"", "0.0.0.0", "::"}:
+        host = "127.0.0.1"
+    if ":" in host and not host.startswith("[") and host != "localhost":
+        host = f"[{host}]"
+    return f"http://{host}:{cfg.port}"
+
+
+def _normalize_relay_url(relay: str) -> str:
+    """标准化 Relay URL：支持完整 URL 或只输入域名"""
+    if not relay:
+        return relay
+    # 如果已经是完整的 WebSocket URL，直接返回
+    if relay.startswith(("ws://", "wss://")):
+        return relay
+    # 如果只输入域名，自动拼接
+    # 假设使用 wss 协议和 /relay/agent 路径
+    if "/" in relay and not relay.startswith(("http://", "https://")):
+        # 可能是 nvi.aibix.top/relay/agent 这种格式
+        return f"wss://{relay}"
+    # 只输入域名：nvi.aibix.top
+    return f"wss://{relay}/relay/agent"
+
+
+def _start_embedded_relay_agent(cfg) -> None:
+    if not cfg.relay:
+        return
+    try:
+        from .relay.agent import run_agent
+        from .relay.protocol import derive_agent_token, require_optional_dependency
+
+        require_optional_dependency("websockets", "relay-agent")
+        require_optional_dependency("httpx", "relay-agent")
+        relay_token = cfg.relay_token or derive_agent_token(cfg.token)
+        agent_args = Namespace(
+            relay=_normalize_relay_url(cfg.relay),
+            relay_token=relay_token,
+            device=cfg.relay_device,
+            local=_local_agent_url(cfg),
+            local_token=cfg.token,
+            timeout=cfg.relay_timeout,
+            reconnect=cfg.relay_reconnect,
+        )
+    except Exception as exc:
+        raise SystemExit(f"Relay Agent 初始化失败: {exc}") from exc
+
+    def _runner():
+        try:
+            asyncio.run(run_agent(agent_args))
+        except Exception as exc:
+            logging.error("Relay Agent 已退出: %s", exc)
+
+    thread = threading.Thread(target=_runner, name="voice-input-relay-agent", daemon=True)
+    thread.start()
+    logging.info("内置 Relay Agent 已启动: %s -> %s", cfg.relay, agent_args.local)
 
 
 if __name__ == "__main__":

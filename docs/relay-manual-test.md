@@ -20,27 +20,30 @@ Relay 模式包含三部分：
   -> 本地 voice-input 服务
 ```
 
-### 1. 本地 voice-input 服务
+### 1. 本地 voice-input + 内置 Relay Agent
 
 运行在真正需要接收语音输入、执行粘贴/按键/命令的目标电脑上。
 
-建议只监听本机：
+推荐直接用 `voice-input --relay` 一键启动本地服务和内置 Agent：
 
 ```bash
-voice-input -H 127.0.0.1 -p 8080 -t local-token
+voice-input \
+  -H 127.0.0.1 \
+  -p 8080 \
+  -t my-token \
+  --relay wss://relay.example.com/relay/agent
 ```
 
-### 2. Relay Agent
+`--relay` 非空时会自动启用内置 Agent，本地地址默认使用 `http://127.0.0.1:{port}`，Agent 注册 token 默认由 `my-token` 派生。
 
-运行在目标电脑上，主动连接公网 Relay Server，并把请求转发到本机 `voice-input`。
+### 2. 独立 Relay Agent（高级/调试）
+
+通常不需要单独启动。仅在需要拆分进程或调试时使用：
 
 ```bash
 voice-input-relay-agent \
   --relay wss://relay.example.com/relay/agent \
-  --relay-token agent-token \
-  --device default \
-  --local http://127.0.0.1:8080 \
-  --local-token local-token
+  --token my-token
 ```
 
 ### 3. Relay Server
@@ -51,8 +54,7 @@ voice-input-relay-agent \
 voice-input-relay-server \
   --host 127.0.0.1 \
   --port 8787 \
-  --client-token client-token \
-  --agent-token agent-token
+  --token my-token
 ```
 
 通常由 Nginx/Caddy 反代到公网 HTTPS。
@@ -93,49 +95,54 @@ pip install -e ".[relay]"
 
 适合先在同一台电脑上验证功能闭环。
 
-### 终端 1：启动本地 voice-input
-
-```bash
-voice-input -H 127.0.0.1 -p 8080 -t local-token
-```
-
-如果使用源码方式：
-
-```bash
-python -m voice_input -H 127.0.0.1 -p 8080 -t local-token
-```
-
-### 终端 2：启动 Relay Server
+### 终端 1：启动 Relay Server
 
 ```bash
 voice-input-relay-server \
   --host 127.0.0.1 \
   --port 8787 \
-  --client-token client-token \
-  --agent-token agent-token \
+  --token my-token \
+  --log-level debug
+```
+
+如果使用源码方式：
+
+```bash
+python -m voice_input.relay.server \
+  --host 127.0.0.1 \
+  --port 8787 \
+  --token my-token \
+  --log-level debug
+```
+
+### 终端 2：启动本地 voice-input + 内置 Agent
+
+```bash
+voice-input \
+  -H 127.0.0.1 \
+  -p 8080 \
+  -t my-token \
+  --relay ws://127.0.0.1:8787/relay/agent \
   --log-level debug
 ```
 
 源码方式：
 
 ```bash
-python -m voice_input.relay.server \
-  --host 127.0.0.1 \
-  --port 8787 \
-  --client-token client-token \
-  --agent-token agent-token \
+python -m voice_input \
+  -H 127.0.0.1 \
+  -p 8080 \
+  -t my-token \
+  --relay ws://127.0.0.1:8787/relay/agent \
   --log-level debug
 ```
 
-### 终端 3：启动 Relay Agent
+### 独立 Agent 三进程测试（高级）
 
 ```bash
 voice-input-relay-agent \
   --relay ws://127.0.0.1:8787/relay/agent \
-  --relay-token agent-token \
-  --device default \
-  --local http://127.0.0.1:8080 \
-  --local-token local-token \
+  --token my-token \
   --log-level debug
 ```
 
@@ -144,10 +151,7 @@ voice-input-relay-agent \
 ```bash
 python -m voice_input.relay.agent \
   --relay ws://127.0.0.1:8787/relay/agent \
-  --relay-token agent-token \
-  --device default \
-  --local http://127.0.0.1:8080 \
-  --local-token local-token \
+  --token my-token \
   --log-level debug
 ```
 
@@ -169,7 +173,7 @@ curl http://127.0.0.1:8787/relay/health
 ### 验证 `/status` 转发
 
 ```bash
-curl -H "X-Auth-Token: client-token" \
+curl -H "X-Auth-Token: my-token" \
   http://127.0.0.1:8787/status
 ```
 
@@ -179,7 +183,7 @@ curl -H "X-Auth-Token: client-token" \
 
 ```bash
 curl -X POST http://127.0.0.1:8787/message \
-  -H "X-Auth-Token: client-token" \
+  -H "X-Auth-Token: my-token" \
   -H "Content-Type: application/json" \
   -d '{"content":"relay test","source":"manual"}'
 ```
@@ -187,7 +191,7 @@ curl -X POST http://127.0.0.1:8787/message \
 然后查看消息列表：
 
 ```bash
-curl -H "X-Auth-Token: client-token" \
+curl -H "X-Auth-Token: my-token" \
   http://127.0.0.1:8787/messages
 ```
 
@@ -201,7 +205,7 @@ curl -H "X-Auth-Token: client-token" \
 
 ```bash
 curl -X POST http://127.0.0.1:8787/input \
-  -H "X-Auth-Token: client-token" \
+  -H "X-Auth-Token: my-token" \
   -H "Content-Type: application/json" \
   -d '{"text":"来自 Relay 的测试文本","action":"copy","timestamp":1710000000000}'
 ```
@@ -210,7 +214,7 @@ curl -X POST http://127.0.0.1:8787/input \
 
 ```bash
 curl -X POST http://127.0.0.1:8787/input \
-  -H "X-Auth-Token: client-token" \
+  -H "X-Auth-Token: my-token" \
   -H "Content-Type: application/json" \
   -d '{"text":"来自 Relay 的粘贴测试","action":"paste","timestamp":1710000000000}'
 ```
@@ -238,16 +242,16 @@ https://relay.example.com
 Token 填写：
 
 ```text
-client-token
+my-token
 ```
 
 之后正常点击「发送」即可。
 
 注意：
 
-- 手机端访问 Relay Server 使用 `client-token`。
-- Relay Agent 访问本地 `voice-input` 使用 `local-token`。
-- 浏览器地址栏可以打开 `https://relay.example.com/?token=client-token` 获取原页面，但页面内连接设置仍建议确认服务器地址为 `https://relay.example.com`，Token 为 `client-token`。
+- 手机端访问 Relay Server 使用 `my-token`。
+- Relay Agent 访问本地 `voice-input` 使用 `my-token`。
+- 浏览器地址栏可以打开 `https://relay.example.com/?token=my-token` 获取原页面，但页面内连接设置仍建议确认服务器地址为 `https://relay.example.com`，Token 为 `my-token`。
 - 本地 `voice-input` 建议只监听 `127.0.0.1`。Relay Agent 会把请求转成本机访问，不需要把本地服务暴露到公网。
 
 ### 方式 B：通过 Relay 代理原页面
@@ -270,8 +274,7 @@ Relay 会把 `GET /` 转发到本地 `voice-input` 的 `/`，返回原页面。
 voice-input-relay-server \
   --host 127.0.0.1 \
   --port 8787 \
-  --client-token client-token \
-  --agent-token agent-token
+  --token my-token
 ```
 
 ### 2. Nginx 反代配置
@@ -317,10 +320,7 @@ server {
 ```bash
 voice-input-relay-agent \
   --relay wss://relay.example.com/relay/agent \
-  --relay-token agent-token \
-  --device default \
-  --local http://127.0.0.1:8080 \
-  --local-token local-token
+  --token my-token
 ```
 
 ### 4. 手机端填写
@@ -334,7 +334,7 @@ https://relay.example.com
 Token：
 
 ```text
-client-token
+my-token
 ```
 
 ## Termux + Nginx 部署示例
@@ -361,8 +361,7 @@ pip install "voice-input[relay-server]"
 voice-input-relay-server \
   --host 127.0.0.1 \
   --port 8787 \
-  --client-token client-token \
-  --agent-token agent-token
+  --token my-token
 ```
 
 建议配合：
@@ -403,7 +402,7 @@ relay.example.com {
 
 - Agent 的 `--relay` 地址是否正确。
 - 公网是 `wss://`，本机测试是 `ws://`。
-- `--relay-token` 是否和 Server 的 `--agent-token` 一致。
+- `--token` 是否和 Server 的 `--token` 一致；高级模式下检查 `--relay-token` 与 `--agent-token`。
 - Nginx 是否正确配置 WebSocket Upgrade。
 
 ### 2. 请求返回 `401 UNAUTHORIZED`
@@ -412,11 +411,11 @@ relay.example.com {
 
 检查：
 
-- 页面 Token 是否填写 `client-token`。
+- 页面 Token 是否填写 `my-token`。
 - curl 是否带了：
 
 ```bash
--H "X-Auth-Token: client-token"
+-H "X-Auth-Token: my-token"
 ```
 
 ### 3. 请求返回 `503 AGENT_OFFLINE`
@@ -433,7 +432,7 @@ relay.example.com {
 
 - 本地 `voice-input` 是否启动。
 - Agent 的 `--local` 是否正确。
-- Agent 的 `--local-token` 是否和本地 `voice-input -t` 一致。
+- 独立 Agent 模式下，`--token` 或 `--local-token` 是否和本地 `voice-input -t` 一致。
 
 ### 5. Nginx 下 WebSocket 连接失败
 
@@ -455,7 +454,7 @@ proxy_send_timeout 3600s;
 https://relay.example.com
 ```
 
-Token 是否为 Relay Server 的 `client-token`，不是本地 `local-token`。
+Token 是否为 Relay Server 的 `my-token`。
 
 ## Token 区分
 
@@ -463,9 +462,9 @@ Token 是否为 Relay Server 的 `client-token`，不是本地 `local-token`。
 
 | Token | 用途 | 示例 |
 |---|---|---|
-| `client-token` | 手机/浏览器访问 Relay Server | 页面 Token 输入框 |
-| `agent-token` | Relay Agent 连接 Relay Server | `--relay-token` |
-| `local-token` | Agent 访问本地 voice-input | `--local-token` |
+| `my-token` | 手机/浏览器访问 Relay Server | 页面 Token 输入框 |
+| 派生 Agent token | Relay Agent 连接 Relay Server | 默认由 `my-token` 自动派生 |
+| `my-token` | Agent 访问本地 voice-input | 默认复用统一 token |
 
 ## 推荐测试顺序
 

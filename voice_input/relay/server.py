@@ -15,6 +15,7 @@ from .protocol import (
     TYPE_HELLO,
     TYPE_RESPONSE,
     hello_ok_message,
+    derive_agent_token,
     new_request_id,
     request_message,
     require_optional_dependency,
@@ -24,6 +25,7 @@ from .protocol import (
 LOG = logging.getLogger("voice_input.relay.server")
 RELAY_TOKEN_COOKIE = "voice_input_relay_token"
 PUBLIC_PROXY_PATHS = {
+    "",  # 主页 /
     "manifest.json",
     "sw.js",
     "icon.svg",
@@ -44,12 +46,21 @@ class RelayState:
     send_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
 
 
+def _token_type(value: str) -> str:
+    """如果为空，尝试从环境变量读取"""
+    if value:
+        return value
+    import os
+    return os.getenv("VOICE_INPUT_TOKEN", "")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="voice-input Relay Server")
     parser.add_argument("--host", default="127.0.0.1", help="监听地址，默认 127.0.0.1")
     parser.add_argument("--port", type=int, default=8787, help="监听端口，默认 8787")
-    parser.add_argument("--client-token", default="", help="手机端访问 Relay 使用的 token")
-    parser.add_argument("--agent-token", default="", help="Agent 注册 Relay 使用的 token")
+    parser.add_argument("--token", type=_token_type, default="", help="统一 Token；用于手机端访问，并派生 Agent 注册 token")
+    parser.add_argument("--client-token", default="", help="手机端访问 Relay 使用的 token；默认复用 --token")
+    parser.add_argument("--agent-token", default="", help="Agent 注册 Relay 使用的 token；默认由 --token 派生")
     parser.add_argument("--default-device", default="default", help="默认设备 ID")
     parser.add_argument("--timeout", type=float, default=30.0, help="转发请求超时时间（秒）")
     parser.add_argument("--log-level", default="info", choices=["debug", "info", "warning", "error"], help="日志级别")
@@ -68,7 +79,7 @@ def _error_response(code: str, message: str, status: int):
 
 def _check_client_token(req: Any, state: RelayState) -> bool:
     if not state.client_token:
-        return True
+        return False  # 未设置 token 时拒绝请求
     token = req.headers.get("x-auth-token") or req.query_params.get("token") or req.cookies.get(RELAY_TOKEN_COOKIE) or ""
     return token == state.client_token
 
@@ -218,6 +229,11 @@ def main(argv=None) -> int:
     require_optional_dependency("uvicorn", "relay-server")
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.token:
+        if not args.client_token:
+            args.client_token = args.token
+        if not args.agent_token:
+            args.agent_token = derive_agent_token(args.token)
     logging.basicConfig(level=getattr(logging, args.log_level.upper()), format="%(asctime)s %(levelname)s %(message)s")
     import uvicorn
 

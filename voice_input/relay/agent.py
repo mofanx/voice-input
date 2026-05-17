@@ -15,6 +15,7 @@ from .protocol import (
     TYPE_PING,
     TYPE_REQUEST,
     hello_message,
+    derive_agent_token,
     pong_message,
     require_optional_dependency,
     response_message,
@@ -27,10 +28,11 @@ LOG = logging.getLogger("voice_input.relay.agent")
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="voice-input Relay Agent")
     parser.add_argument("--relay", required=True, help="Relay WebSocket 地址，例如 wss://relay.example.com/relay/agent")
-    parser.add_argument("--relay-token", required=True, help="Agent 连接 Relay 使用的 token")
+    parser.add_argument("--token", default="", help="统一 Token；默认用于本地服务，并派生 Agent 连接 Relay 的 token")
+    parser.add_argument("--relay-token", default="", help="Agent 连接 Relay 使用的 token；默认由 --token 派生")
     parser.add_argument("--device", default="default", help="设备 ID，默认 default")
     parser.add_argument("--local", default="http://127.0.0.1:8080", help="本地 voice-input 地址")
-    parser.add_argument("--local-token", default="", help="本地 voice-input token")
+    parser.add_argument("--local-token", default="", help="本地 voice-input token；默认复用 --token")
     parser.add_argument("--timeout", type=float, default=30.0, help="本地请求超时时间（秒）")
     parser.add_argument("--reconnect", type=float, default=3.0, help="断线重连间隔（秒）")
     parser.add_argument("--log-level", default="info", choices=["debug", "info", "warning", "error"], help="日志级别")
@@ -144,6 +146,11 @@ def main(argv=None) -> int:
     require_optional_dependency("httpx", "relay-agent")
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.token:
+        if not args.relay_token:
+            args.relay_token = derive_agent_token(args.token)
+        if not args.local_token:
+            args.local_token = args.token
     logging.basicConfig(level=getattr(logging, args.log_level.upper()), format="%(asctime)s %(levelname)s %(message)s")
     try:
         asyncio.run(run_agent(args))

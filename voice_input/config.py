@@ -51,6 +51,14 @@ class AppConfig:
     workers: int = 1
     log_level: str = "info"
 
+    # Relay Agent
+    relay: str = ""
+    relay_token: str = ""
+    relay_device: str = "default"
+    relay_local: str = ""
+    relay_timeout: float = 30.0
+    relay_reconnect: float = 3.0
+
     def __post_init__(self):
         if self.require_token and not self.token:
             self.token = secrets.token_urlsafe(18)
@@ -95,6 +103,13 @@ def load_from_env() -> dict:
         "VOICE_INPUT_DB_PATH": "db_path",
         "VOICE_INPUT_WORKERS": "workers",
         "VOICE_INPUT_LOG_LEVEL": "log_level",
+        "VOICE_INPUT_RELAY": "relay",
+        "VOICE_INPUT_RELAY_URL": "relay",
+        "VOICE_INPUT_RELAY_TOKEN": "relay_token",
+        "VOICE_INPUT_RELAY_DEVICE": "relay_device",
+        "VOICE_INPUT_RELAY_LOCAL": "relay_local",
+        "VOICE_INPUT_RELAY_TIMEOUT": "relay_timeout",
+        "VOICE_INPUT_RELAY_RECONNECT": "relay_reconnect",
     }
     result = {}
     for env_key, cfg_key in mapping.items():
@@ -109,12 +124,15 @@ def _coerce(key: str, val):
     """将字符串值转为目标类型"""
     bool_keys = {"require_token", "auto_paste", "command_mode_enabled", "shell_enabled", "shell_confirm"}
     int_keys = {"port", "history_size", "max_content_length", "workers"}
+    float_keys = {"relay_timeout", "relay_reconnect"}
     list_keys = {"allowed_ips", "command_require_confirm_risks", "shell_danger_patterns"}
 
     if key in bool_keys and isinstance(val, str):
         return _parse_bool(val)
     if key in int_keys and isinstance(val, str):
         return int(val)
+    if key in float_keys and isinstance(val, str):
+        return float(val)
     if key in list_keys and isinstance(val, str):
         return [s.strip() for s in val.split(",") if s.strip()]
     return val
