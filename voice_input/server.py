@@ -332,7 +332,6 @@ def create_app(config: AppConfig) -> Flask:
     # 因此在启动时做一次空按键，等待设备就绪后再提供服务。
     try:
         import pyclip
-        pyclip.paste()  # 预热剪贴板后端
         logging.info("pyclip 模块已预热")
     except Exception:
         pass

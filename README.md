@@ -2,7 +2,7 @@
 
 将手机端的语音识别结果，通过局域网实时传送到电脑（Windows / Linux / macOS），自动写入剪贴板并可粘贴到当前光标位置。支持任意手机语音输入法（如豆包、讯飞、搜狗、Gboard 等）。
 
-**v2.1.0 新特性**：命令模式、SQLite 持久化存储、用户配置目录自动初始化、发送历史增强（类型区分/筛选/再发/填入）、消息面板吸底体验。
+**v2.2.2 新特性**：命令模式、SQLite 持久化存储、用户配置目录自动初始化、发送历史增强（类型区分/筛选/再发/填入）、消息面板吸底体验。
 
 ## 工作原理
 
@@ -31,6 +31,12 @@ pip install .
 
 # 安装完整版（含自动粘贴 + 生产部署 + YAML 配置）
 pip install ".[all]"
+
+# 安装 Relay Agent（目标电脑/云桌面使用）
+pip install ".[relay-agent]"
+
+# 安装 Relay Server（公网中转服务器/Termux/VPS 使用）
+pip install ".[relay-server]"
 ```
 
 ### 方式二：直接运行
@@ -79,10 +85,57 @@ voice-input-send "消息" --server http://192.168.1.100:8080 -t $VOICE_INPUT_TOK
 
 环境变量自动读取：`VOICE_INPUT_TOKEN`（鉴权）、`VOICE_INPUT_SERVER`（服务器地址，默认 http://localhost:8080）
 
+### Relay 公网转发模式（测试中）
+
+Relay 模式用于华为云桌面、公司内网、NAT、Termux 家用服务器、Ubuntu VPS 等非局域网场景。手机端仍使用原页面/PWA，只需要把「连接设置」里的服务器地址从局域网地址改成公网 Relay 地址。
+
+```text
+手机浏览器/PWA
+  -> Relay Server（公网中转）
+  -> Relay Agent（目标电脑主动连接）
+  -> 本地 voice-input 服务
+```
+
+1. 目标电脑启动本地服务：
+
+```bash
+voice-input -H 127.0.0.1 -p 8080 -t local-token
+```
+
+2. 公网服务器启动 Relay Server：
+
+```bash
+voice-input-relay-server \
+  --host 127.0.0.1 \
+  --port 8787 \
+  --client-token client-token \
+  --agent-token agent-token
+```
+
+3. 目标电脑启动 Relay Agent：
+
+```bash
+voice-input-relay-agent \
+  --relay wss://relay.example.com/relay/agent \
+  --relay-token agent-token \
+  --device default \
+  --local http://127.0.0.1:8080 \
+  --local-token local-token
+```
+
+4. 手机端连接设置：
+
+```text
+服务器地址: https://relay.example.com
+Token: client-token
+```
+
+详细手动测试、Termux + Nginx、Ubuntu VPS + Nginx/Caddy 配置见：`docs/relay-manual-test.md`。
+
 启动后终端会输出：
 ```
 ============================================================
-  跨设备语音输入传输系统 v2.1.0
+  跨设备语音输入传输系统 v2.2.2
 ============================================================
   服务地址:  http://192.168.1.100:8080
   手机页面:  http://192.168.1.100:8080/
@@ -95,6 +148,8 @@ voice-input-send "消息" --server http://192.168.1.100:8080 -t $VOICE_INPUT_TOK
 > **PWA 提示**：Chrome / Edge 浏览器会出现「添加到主屏幕」横幅，点击后可将网页安装为应用，获得全屏、无浏览器工具栏的原生体验。iOS Safari 可点击分享按钮 → 添加到主屏幕。
 
 ## 命令行参数
+
+### `voice-input`
 
 ```
 用法: voice-input [选项]
@@ -111,6 +166,37 @@ voice-input-send "消息" --server http://192.168.1.100:8080 -t $VOICE_INPUT_TOK
   --history-size N        历史记录条数 (默认 50)
   --production            使用 waitress 生产服务器
   --workers N             工作线程数 (默认 4)
+  --log-level LEVEL       日志级别 (debug/info/warning/error)
+```
+
+### `voice-input-relay-server`
+
+```text
+用法: voice-input-relay-server [选项]
+
+选项:
+  --host ADDR             监听地址，默认 127.0.0.1
+  --port PORT             监听端口，默认 8787
+  --client-token TOKEN    手机端访问 Relay 使用的 token
+  --agent-token TOKEN     Agent 注册 Relay 使用的 token
+  --default-device ID     默认设备 ID
+  --timeout SECONDS       转发请求超时时间
+  --log-level LEVEL       日志级别 (debug/info/warning/error)
+```
+
+### `voice-input-relay-agent`
+
+```text
+用法: voice-input-relay-agent [选项]
+
+选项:
+  --relay URL             Relay WebSocket 地址，例如 wss://relay.example.com/relay/agent
+  --relay-token TOKEN     Agent 连接 Relay 使用的 token
+  --device ID             设备 ID，默认 default
+  --local URL             本地 voice-input 地址，默认 http://127.0.0.1:8080
+  --local-token TOKEN     本地 voice-input token
+  --timeout SECONDS       本地请求超时时间
+  --reconnect SECONDS     断线重连间隔
   --log-level LEVEL       日志级别 (debug/info/warning/error)
 ```
 
@@ -478,8 +564,8 @@ pip install build
 python -m build
 
 # 生成的包在 dist/ 目录
-# dist/voice_input-2.1.0-py3-none-any.whl
-# dist/voice_input-2.1.0.tar.gz
+# dist/voice_input-2.2.2-py3-none-any.whl
+# dist/voice_input-2.2.2.tar.gz
 ```
 
 ## 项目结构

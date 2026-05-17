@@ -929,7 +929,7 @@
     try {
       const ctrl = new AbortController();
       const tid = setTimeout(() => ctrl.abort(), 4000);
-      const res = await fetch(getBaseUrl() + '/status', { signal: ctrl.signal });
+      const res = await fetch(getBaseUrl() + '/status', { headers: authHeaders(), signal: ctrl.signal });
       clearTimeout(tid);
       if (res.ok) {
         badge.className = 'conn-badge ok';
