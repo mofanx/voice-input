@@ -238,15 +238,18 @@ def build_config(
             if v is not None:
                 merged[k] = v
 
+    fallback_config_dir = config_dir or get_user_config_dir()
+    fallback_config_dir.mkdir(parents=True, exist_ok=True)
+
     # command_file 为空时，自动指向用户配置目录的 commands.yaml
-    if not merged.get("command_file") and config_dir:
-        candidate = config_dir / "commands.yaml"
+    if not merged.get("command_file"):
+        candidate = fallback_config_dir / "commands.yaml"
         if candidate.exists():
             merged["command_file"] = str(candidate)
 
     # db_path 为空时，自动指向用户配置目录的 voice_input.db
-    if not merged.get("db_path") and config_dir:
-        merged["db_path"] = str(config_dir / "voice_input.db")
+    if not merged.get("db_path"):
+        merged["db_path"] = str(fallback_config_dir / "voice_input.db")
 
     # 类型转换
     coerced = {k: _coerce(k, v) for k, v in merged.items()}
