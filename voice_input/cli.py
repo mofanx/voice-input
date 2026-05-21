@@ -52,8 +52,7 @@ def parse_args(argv=None):
     beh.add_argument("--history-size", type=int, metavar="N", help="历史记录条数 (默认 50)")
 
     relay = p.add_argument_group("Relay")
-    relay.add_argument("--relay", metavar="URL", help="Relay WebSocket 地址；设置后自动启动内置 Agent")
-    relay.add_argument("--relay-token", metavar="TOKEN", help="Agent 连接 Relay 使用的 token；默认由 --token 派生")
+    relay.add_argument("--relay", metavar="URL", help="Relay WebSocket 地址；设置后自动启动内置 Agent（token 复用 --token）")
     relay.add_argument("--relay-device", metavar="ID", help="Relay 设备 ID (默认 default)")
     relay.add_argument("--relay-local", metavar="URL", help="本地 voice-input 地址；默认按 host/port 自动生成")
     relay.add_argument("--relay-timeout", type=float, metavar="SECONDS", help="Relay 本地请求超时时间")
@@ -98,8 +97,6 @@ def main(argv=None):
         cli_dict["history_size"] = args.history_size
     if args.relay is not None:
         cli_dict["relay"] = args.relay
-    if args.relay_token is not None:
-        cli_dict["relay_token"] = args.relay_token
     if args.relay_device is not None:
         cli_dict["relay_device"] = args.relay_device
     if args.relay_local is not None:
@@ -225,14 +222,15 @@ def _start_embedded_relay_agent(cfg) -> None:
         return
     try:
         from .relay.agent import run_agent
-        from .relay.protocol import derive_agent_token, require_optional_dependency
+        from .relay.protocol import require_optional_dependency
 
         require_optional_dependency("websockets", "relay-agent")
         require_optional_dependency("httpx", "relay-agent")
-        relay_token = cfg.relay_token or derive_agent_token(cfg.token)
+        if not cfg.token:
+            raise SystemExit("启用 --relay 时必须设置 --token，token 同时用于 Relay 路由与本地鉴权")
         agent_args = Namespace(
             relay=_normalize_relay_url(cfg.relay),
-            relay_token=relay_token,
+            token=cfg.token,
             device=cfg.relay_device,
             local=_local_agent_url(cfg),
             local_token=cfg.token,

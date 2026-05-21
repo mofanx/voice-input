@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "voice-input"
-version = "3.0.0"
+version = "3.1.0"
 description = "跨设备语音输入传输系统 - 将手机端语音识别文本传送到电脑"
 readme = "README.md"
 license = {text = "MIT"}
@@ -28,7 +28,7 @@ classifiers = [
 ]
 dependencies = [
     "flask>=2.2",
-    "pyclip>=0.7",
+    "pyclipx>=0.8.0",
     "keyboard>=0.13",
 ]
 

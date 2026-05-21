@@ -53,7 +53,6 @@ class AppConfig:
 
     # Relay Agent
     relay: str = ""
-    relay_token: str = ""
     relay_device: str = "default"
     relay_local: str = ""
     relay_timeout: float = 30.0
@@ -105,7 +104,6 @@ def load_from_env() -> dict:
         "VOICE_INPUT_LOG_LEVEL": "log_level",
         "VOICE_INPUT_RELAY": "relay",
         "VOICE_INPUT_RELAY_URL": "relay",
-        "VOICE_INPUT_RELAY_TOKEN": "relay_token",
         "VOICE_INPUT_RELAY_DEVICE": "relay_device",
         "VOICE_INPUT_RELAY_LOCAL": "relay_local",
         "VOICE_INPUT_RELAY_TIMEOUT": "relay_timeout",

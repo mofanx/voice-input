@@ -20,11 +20,13 @@ allowed_ips:
 
 # Relay Agent（目标电脑连接公网 Relay Server；留空则不启用）
 # relay: "relay.example.com"  # 支持完整 URL (wss://relay.example.com/relay/agent) 或仅域名
-# relay_device: "default"
-# relay_token: ""          # 留空时由 token 自动派生
-# relay_local: ""          # 留空时自动使用 http://127.0.0.1:{port}
+# relay_device: "default"     # 多设备同 token 时用于区分（一般无需修改）
+# relay_local: ""             # 留空时自动使用 http://127.0.0.1:{port}
 # relay_timeout: 30.0
 # relay_reconnect: 3.0
+#
+# 注意：v3.1.0 起 token 同时用于 Relay 注册路由 与 本地服务鉴权，
+#       不再需要 relay_token；多设备只需各自使用不同的 token 即可。
 
 # 行为配置
 auto_paste: true        # 默认是否自动粘贴（true=自动 Ctrl+V, false=仅复制）

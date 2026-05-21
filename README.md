@@ -2,7 +2,7 @@
 
 将手机端的语音识别结果，通过局域网实时传送到电脑（Windows / Linux / macOS），自动写入剪贴板并可粘贴到当前光标位置。支持任意手机语音输入法（如豆包、讯飞、搜狗、Gboard 等）。
 
-**v3.0.0 新特性**：Relay 转发模式（支持公网穿透）、token 环境变量支持、relay 地址简化输入、Relay Server 安全强化（强制 token 验证）。
+**v3.1.0 新特性**：Relay 多 agent 路由（一个 Relay 可同时服务家/公司多台电脑）、token-as-routing-key 设计（无需预配置）、可选 allowlist 准入控制、未带 token 访问主页时显示落地页。
 
 ## 工作原理
 
@@ -111,17 +111,20 @@ voice-input \
 2. 公网服务器启动 Relay Server：
 
 ```bash
-# 方式一：CLI 参数
-voice-input-relay-server \
-  --host 127.0.0.1 \
-  --port 8787 \
-  --token my-token
+# 默认开放路由模式：任何 token 都可注册，无需预配置
+voice-input-relay-server --host 127.0.0.1 --port 8787
 
-# 方式二：环境变量
-VOICE_INPUT_TOKEN=my-token voice-input-relay-server
+# 可选：限定准入 token（生产推荐）
+voice-input-relay-server --allowlist-file /etc/voice-input/tokens.txt
+# 或环境变量
+VOICE_INPUT_RELAY_ALLOWLIST="home-token,work-token" voice-input-relay-server
 ```
 
-> **安全提示**：Relay Server 强制要求 token 验证，未设置 token 时会拒绝所有请求。主页可公开访问，但敏感操作需要有效 token。
+> **多 agent 路由**：v3.1.0 起 Relay Server 不再绑定单一 token，而是把 token 作为路由 key。家里电脑用 `home-xxx`、公司电脑用 `work-yyy`，同一台 Relay 自动按 token 分发。手机端只需在 URL/设置里填对应 token，即可访问对应电脑。
+>
+> **token 存储**：Relay 内存中以 sha256 哈希形式保存 token，日志输出仅截取前 8 位，不留明文。
+>
+> **未带 token 访问 `/`**：返回轻量落地页提示输入 token，体验友好。
 
 3. 手机端连接设置：
 
@@ -135,7 +138,7 @@ Token: my-token
 启动后终端会输出：
 ```
 ============================================================
-  跨设备语音输入传输系统 v3.0.0
+  跨设备语音输入传输系统 v3.1.0
 ============================================================
   服务地址:  http://192.168.1.100:8080
   手机页面:  http://192.168.1.100:8080/
@@ -165,7 +168,6 @@ Token: my-token
   --no-auto-paste         默认仅复制，不自动粘贴
   --history-size N        历史记录条数 (默认 50)
   --relay URL             Relay WebSocket 地址，支持简化输入（如 relay.example.com）
-  --relay-token TOKEN     Agent 连接 Relay 使用的 token；默认由 --token 派生
   --relay-device ID       Relay 设备 ID (默认 default)
   --relay-local URL       本地 voice-input 地址；默认按 host/port 自动生成
   --relay-timeout SECONDS Relay 本地请求超时时间
@@ -183,15 +185,21 @@ Token: my-token
 选项:
   --host ADDR             监听地址，默认 127.0.0.1
   --port PORT             监听端口，默认 8787
-  --token TOKEN           统一 Token；用于手机端访问，并派生 Agent 注册 token
-  --client-token TOKEN    高级选项：覆盖手机端访问 Relay 使用的 token
-  --agent-token TOKEN     高级选项：覆盖 Agent 注册 Relay 使用的 token
-  --default-device ID     默认设备 ID
-  --timeout SECONDS       转发请求超时时间
+  --allowlist-file PATH   Token 准入文件，每行一个 token（# 开头为注释）；
+                          未指定时所有 token 均可注册（开放路由模式）
+  --default-device ID     默认设备 ID（agent 未上报 device_id 时使用）
+  --timeout SECONDS       转发请求超时时间（默认 30）
   --log-level LEVEL       日志级别 (debug/info/warning/error)
 
 环境变量:
-  VOICE_INPUT_TOKEN       Token（未指定 --token 时从此读取）
+  VOICE_INPUT_RELAY_ALLOWLIST       逗号分隔的 token 列表
+  VOICE_INPUT_RELAY_ALLOWLIST_FILE  token 文件路径
+
+模型说明:
+  - 默认开放路由模式：agent 携带任意 token 注册，Relay 用 sha256(token) 作为路由 key。
+  - 多 agent 共存：不同 token 可同时注册，互不干扰。
+  - 同 token 重复注册：新连接接管，旧连接收到 1012 close。
+  - 未带 token 访问 / 时返回落地页；其它路径返回 401。
 ```
 
 ### `voice-input-relay-agent`
@@ -201,8 +209,7 @@ Token: my-token
 
 选项:
   --relay URL             Relay WebSocket 地址，支持简化输入（如 relay.example.com）
-  --token TOKEN           统一 Token；默认用于本地服务，并派生 Agent 连接 Relay 的 token
-  --relay-token TOKEN     高级选项：覆盖 Agent 连接 Relay 使用的 token
+  --token TOKEN           Token（必填）；同时用于 Relay 注册路由 与 本地 voice-input 鉴权
   --device ID             设备 ID，默认 default
   --local URL             本地 voice-input 地址，默认 http://127.0.0.1:8080
   --local-token TOKEN     高级选项：覆盖本地 voice-input token
@@ -575,8 +582,8 @@ pip install build
 python -m build
 
 # 生成的包在 dist/ 目录
-# dist/voice_input-3.0.0-py3-none-any.whl
-# dist/voice_input-3.0.0.tar.gz
+# dist/voice_input-3.1.0-py3-none-any.whl
+# dist/voice_input-3.1.0.tar.gz
 ```
 
 ## 项目结构
